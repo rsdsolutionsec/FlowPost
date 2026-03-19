@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { CreatePostModal } from '../components/CreatePostModal';
+import CreatePostModal from '../components/CreatePostModal';
 
 interface Post {
   id: string;
@@ -98,6 +98,7 @@ export function ScheduledPosts() {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
     >
+      {/* Header */}
       <div className="mb-12 flex justify-between items-end">
         <div>
           <h2 className="text-4xl font-extrabold tracking-tight text-on-surface font-headline">Posts Programados</h2>
@@ -120,7 +121,9 @@ export function ScheduledPosts() {
         onSuccess={fetchPosts} 
       />
 
+      {/* Main Content Area */}
       <div className="bg-surface-container-lowest rounded-2xl shadow-sm ghost-border overflow-hidden min-h-[600px]">
+        {/* Posts List */}
         <div className="p-8 space-y-4">
           {loading ? (
             <div className="text-center py-20 text-on-surface-variant font-bold">Cargando publicaciones...</div>
@@ -138,6 +141,7 @@ export function ScheduledPosts() {
           ) : (
             posts.map((post) => (
               <div key={post.id} className="flex gap-6 p-4 bg-white border border-slate-200 rounded-2xl hover:border-primary/30 transition-colors group">
+                {/* Date/Time Column */}
                 <div className="w-32 flex flex-col items-center justify-center border-r border-slate-100 pr-6 shrink-0">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                     {new Date(post.scheduled_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
@@ -147,10 +151,12 @@ export function ScheduledPosts() {
                   </span>
                 </div>
                 
+                {/* Media Preview */}
                 <div className="w-20 h-20 rounded-xl bg-slate-100 overflow-hidden flex-shrink-0">
                   <ImagePreview path={post.image_path} />
                 </div>
 
+                {/* Content */}
                 <div className="flex-1 min-w-0 flex flex-col justify-center">
                   <div className="flex items-center gap-2 mb-1">
                     <span className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider ${
@@ -172,6 +178,7 @@ export function ScheduledPosts() {
                   <p className="text-sm text-slate-600 truncate font-medium">{post.caption}</p>
                 </div>
 
+                {/* Actions */}
                 <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button 
                     onClick={() => handleDelete(post.id, post.image_path)}

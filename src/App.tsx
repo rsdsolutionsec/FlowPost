@@ -1,61 +1,63 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import AppLayout from './components/layout/AppLayout';
 import Dashboard from './pages/Dashboard';
-import Accounts from './pages/Accounts';
-import Campaigns from './pages/Campaigns';
 import ScheduledPosts from './pages/ScheduledPosts';
+import Campaigns from './pages/Campaigns';
 import MediaLibrary from './pages/MediaLibrary';
-import Analytics from './pages/Analytics';
 import Automation from './pages/Automation';
+import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
+import Accounts from './pages/Accounts';
 import Auth from './pages/Auth';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
-function PrivateRoute({ children }: { children: React.ReactNode }) {
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#0F172A] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    );
+    return <div className="min-h-screen flex items-center justify-center bg-surface">Cargando...</div>;
   }
 
   if (!user) {
-    return <Navigate to="/auth" />;
+    return <Navigate to="/auth" replace />;
   }
 
   return <>{children}</>;
 }
 
-function App() {
+export default function App() {
   return (
-    <Router>
-      <AuthProvider>
+    <AuthProvider>
+      <Router>
         <Routes>
+          {/* Public Route */}
           <Route path="/auth" element={<Auth />} />
-          <Route
-            path="/"
-            element={
-              <PrivateRoute>
-                <AppLayout />
-              </PrivateRoute>
-            }
-          >
-            <Route index element={<Dashboard />} />
-            <Route path="accounts" element={<Accounts />} />
-            <Route path="campaigns" element={<Campaigns />} />
-            <Route path="posts" element={<ScheduledPosts />} />
-            <Route path="media" element={<MediaLibrary />} />
-            <Route path="analytics" element={<Analytics />} />
-            <Route path="automation" element={<Automation />} />
-            <Route path="settings" element={<Settings />} />
+
+          {/* Redirect root to dashboard */}
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          
+          {/* Main App Layout (Protected) */}
+          <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/posts" element={<ScheduledPosts />} />
+            <Route path="/campaigns" element={<Campaigns />} />
+            <Route path="/media" element={<MediaLibrary />} />
+            <Route path="/automation" element={<Automation />} />
+            <Route path="/analytics" element={<Analytics />} />
+            <Route path="/accounts" element={<Accounts />} />
+            <Route path="/settings" element={<Settings />} />
           </Route>
+
+          {/* Catch all route */}
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
-      </AuthProvider>
-    </Router>
+      </Router>
+    </AuthProvider>
   );
 }
-
-export default App;

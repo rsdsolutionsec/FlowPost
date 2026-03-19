@@ -1,35 +1,40 @@
-import { Settings as SettingsIcon, Bell, Shield, Palette, Database, Globe } from 'lucide-react';
-
-const sections = [
-  { name: 'General Settings', icon: SettingsIcon, desc: 'Update your profile and application preferences.' },
-  { name: 'Security & Privacy', icon: Shield, desc: 'Manage access tokens and account security.' },
-  { name: 'Notifications', icon: Bell, desc: 'Configure how you receive updates and alerts.' },
-  { name: 'Appearance', icon: Palette, desc: 'Customize the dashboard theme and layouts.' },
-  { name: 'API & Integrations', icon: Globe, desc: 'Manage connections to external services.' },
-  { name: 'Database & Logs', icon: Database, desc: 'Maintenance and system information.' },
-];
+import { motion } from 'framer-motion';
 
 export default function Settings() {
   return (
-    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-700">
-      <div>
-        <h1 className="text-3xl font-bold text-white tracking-tight">System Settings</h1>
-        <p className="mt-2 text-slate-400">Configure FlowPost performance and security preferences.</p>
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="space-y-12"
+    >
+      <div className="flex justify-between items-end">
+        <div>
+          <h2 className="text-4xl font-extrabold tracking-tight text-on-surface font-headline">Configuración</h2>
+          <p className="text-slate-500 mt-2 font-medium">Personaliza tu cuenta y preferencias del sistema.</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {sections.map((section) => (
-          <div key={section.name} className="glass-panel p-8 rounded-2xl flex items-start gap-6 hover:border-blue-500/50 transition-all cursor-pointer group">
-            <div className="p-4 bg-slate-800 rounded-2xl text-slate-400 group-hover:bg-blue-600/10 group-hover:text-blue-500 transition-all">
-              <section.icon size={24} />
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition-colors">{section.name}</h3>
-              <p className="text-sm text-slate-500 leading-relaxed font-medium">{section.desc}</p>
-            </div>
+      <div className="max-w-2xl space-y-8">
+        <div className="p-8 bg-surface-container-lowest rounded-[2.5rem] ghost-border">
+          <h3 className="text-xl font-black mb-6 font-headline">Preferencia de Idioma</h3>
+          <div className="flex gap-4">
+            <button className="px-6 py-2 bg-primary text-white rounded-full font-bold">Español</button>
+            <button className="px-6 py-2 bg-slate-100 text-slate-500 rounded-full font-bold hover:bg-slate-200 transition-all">English</button>
           </div>
-        ))}
+        </div>
+
+        <div className="p-8 bg-surface-container-lowest rounded-[2.5rem] ghost-border">
+          <h3 className="text-xl font-black mb-6 font-headline">Notificaciones</h3>
+          <div className="space-y-4">
+            {['Email al publicar', 'Resumen semanal', 'Alertas de error'].map(opt => (
+              <label key={opt} className="flex justify-between items-center cursor-pointer group">
+                <span className="font-bold text-slate-700 group-hover:text-primary transition-colors">{opt}</span>
+                <input type="checkbox" className="w-6 h-6 rounded-lg text-primary focus:ring-primary/20 border-slate-200" defaultChecked />
+              </label>
+            ))}
+          </div>
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

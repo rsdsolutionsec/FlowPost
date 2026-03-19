@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -7,82 +7,48 @@ interface Campaign {
   id: string;
   name: string;
   description: string;
-  status: 'active' | 'draft' | 'completed';
   created_at: string;
 }
 
-interface Post {
+interface CampaignPost {
   id: string;
   image_path: string;
   caption: string;
 }
 
-export function Campaigns() {
+export default function Campaigns() {
   const { user } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
-  const [assets, setAssets] = useState<Post[]>([]);
+  const [campaignPosts, setCampaignPosts] = useState<CampaignPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newCampaign, setNewCampaign] = useState({ name: '', description: '' });
 
   const fetchCampaigns = async () => {
     if (!user) return;
     setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('campaigns')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      setCampaigns(data || []);
-      if (data && data.length > 0 && !selectedCampaign) {
-        setSelectedCampaign(data[0]);
-      }
-    } catch (error: any) {
-      console.error('Error fetching campaigns:', error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchAssets = async (campaignId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('id, image_path, caption')
-        .eq('campaign_id', campaignId);
-      if (error) throw error;
-      setAssets(data || []);
-    } catch (error: any) {
-      console.error('Error fetching assets:', error.message);
-    }
+    const { data } = await supabase.from('campaigns').select('*').eq('user_id', user.id);
+    setCampaigns(data || []);
+    setLoading(false);
   };
 
   useEffect(() => {
     fetchCampaigns();
   }, [user]);
 
-  useEffect(() => {
-    if (selectedCampaign) {
-      fetchAssets(selectedCampaign.id);
-    }
-  }, [selectedCampaign]);
-
-  const handleCreateCampaign = async () => {
-    const name = prompt('Nombre de la campaña:');
-    if (!name) return;
-    try {
-      const { data, error } = await supabase.from('campaigns').insert([
-        { user_id: user?.id, name, status: 'active' }
-      ]).select();
-      if (error) throw error;
-      if (data) {
-        setCampaigns([data[0], ...campaigns]);
-        setSelectedCampaign(data[0]);
-      }
-    } catch (error: any) {
-      alert('Error: ' + error.message);
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    const { error } = await supabase.from('campaigns').insert([{
+      ...newCampaign,
+      user_id: user.id
+    }]);
+    if (error) alert(error.message);
+    else {
+      setShowCreate(false);
+      setNewCampaign({ name: '', description: '' });
+      fetchCampaigns();
     }
   };
 
@@ -90,103 +56,73 @@ export function Campaigns() {
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
+      className="space-y-12"
     >
-      <div className="mb-12 flex justify-between items-end">
+      <div className="flex justify-between items-end">
         <div>
-          <div className="flex items-center gap-2 text-slate-400 text-xs font-bold tracking-widest uppercase mb-2">
-            <span>Espacio de Trabajo</span>
-            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-            <span className="text-primary">Campañas</span>
-          </div>
-          <h2 className="text-4xl font-extrabold tracking-tight text-on-surface font-headline">
-            {selectedCampaign?.name || 'Mis Campañas'}
-          </h2>
-          <p className="text-slate-500 mt-2 font-medium">Gestiona tus campañas de marketing multicanal.</p>
+          <h2 className="text-4xl font-extrabold tracking-tight text-on-surface font-headline">Campañas</h2>
+          <p className="text-slate-500 mt-2 font-medium">Organiza tus contenidos por objetivos estratégicos.</p>
         </div>
-        <div className="flex gap-3">
-          <button 
-            onClick={handleCreateCampaign}
-            className="px-5 py-2.5 bg-primary text-white font-semibold rounded-full hover:translate-y-[-1px] transition-all flex items-center gap-2"
-          >
-            <span className="material-symbols-outlined text-[18px]">add</span>
-            <span>Nueva Campaña</span>
-          </button>
-        </div>
+        <button 
+          onClick={() => setShowCreate(true)}
+          className="px-6 py-3 bg-primary text-white font-black rounded-full shadow-lg shadow-primary/20 hover:scale-105 transition-all flex items-center gap-2"
+        >
+          <span className="material-symbols-outlined">add</span>
+          Nueva Campaña
+        </button>
       </div>
 
-      <div className="grid grid-cols-12 gap-10">
-        <div className="col-span-3 space-y-6">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 px-2">Campañas</h3>
-          <div className="space-y-3">
-            {campaigns.map((c) => (
-              <div 
-                key={c.id}
-                onClick={() => setSelectedCampaign(c)}
-                className={`p-5 rounded-xl shadow-sm ghost-border cursor-pointer transition-all flex items-start gap-4 ${
-                  selectedCampaign?.id === c.id ? 'bg-surface-container-lowest ring-2 ring-primary/10' : 'bg-surface-container-low hover:bg-surface-container'
-                }`}
-              >
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                  selectedCampaign?.id === c.id ? 'bg-primary-fixed text-primary' : 'bg-slate-200 text-slate-400'
-                }`}>
-                  <span className="material-symbols-outlined" style={{ fontVariationSettings: selectedCampaign?.id === c.id ? "'FILL' 1" : "" }}>folder</span>
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  <p className="font-bold text-sm truncate">{c.name}</p>
-                  <p className="text-xs text-slate-500 capitalize">{c.status}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="col-span-9 space-y-8">
-          <div className="bg-surface-container-lowest rounded-2xl shadow-sm ghost-border overflow-hidden min-h-[400px]">
-            <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-primary flex items-center gap-2">
-                <span className="material-symbols-outlined text-[20px]">grid_view</span>
-                Recursos del Proyecto
-              </h3>
-            </div>
-
-            <div className="p-8 grid grid-cols-4 gap-6">
-              {assets.length === 0 ? (
-                <div className="col-span-full py-20 text-center text-slate-400 italic">
-                  No hay recursos asignados a esta campaña.
-                </div>
-              ) : (
-                assets.map((asset) => (
-                  <div key={asset.id} className="group relative aspect-square rounded-xl overflow-hidden bg-slate-100">
-                     <AssetPreview path={asset.image_path} />
-                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-4 flex flex-col justify-end text-white">
-                       <p className="text-[10px] font-medium truncate">{asset.caption}</p>
-                     </div>
-                  </div>
-                ))
-              )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {campaigns.map(campaign => (
+          <div key={campaign.id} className="p-8 bg-surface-container-lowest rounded-[2.5rem] ghost-border group hover:border-primary/30 transition-all cursor-pointer">
+            <h3 className="text-2xl font-black text-on-surface mb-2 font-headline">{campaign.name}</h3>
+            <p className="text-slate-500 font-medium mb-6 line-clamp-2">{campaign.description}</p>
+            <div className="flex justify-between items-center text-xs font-black uppercase tracking-widest">
+              <span className="text-slate-300">Creada el {new Date(campaign.created_at).toLocaleDateString()}</span>
+              <button className="text-primary opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                Ver Detalles <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+              </button>
             </div>
           </div>
-        </div>
+        ))}
       </div>
+
+      {campaigns.length === 0 && !loading && (
+        <div className="py-20 text-center bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-200">
+           <span className="material-symbols-outlined text-5xl text-slate-300 mb-4">folder_special</span>
+           <p className="text-slate-500 font-bold">Aún no has creado campañas.</p>
+        </div>
+      )}
+
+      {/* Modal Simplificado para crear campaña */}
+      <AnimatePresence>
+        {showCreate && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowCreate(false)} />
+            <motion.form 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              onSubmit={handleCreate}
+              className="relative bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-md space-y-6"
+            >
+              <h3 className="text-2xl font-black font-headline">Nueva Campaña</h3>
+              <input 
+                placeholder="Nombre de la campaña"
+                className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold"
+                value={newCampaign.name}
+                onChange={e => setNewCampaign({...newCampaign, name: e.target.value})}
+              />
+              <textarea 
+                placeholder="Descripción"
+                className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold min-h-[100px]"
+                value={newCampaign.description}
+                onChange={e => setNewCampaign({...newCampaign, description: e.target.value})}
+              />
+              <button className="w-full py-4 bg-primary text-white rounded-2xl font-black">Crear</button>
+            </motion.form>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
-}
-
-function AssetPreview({ path }: { path: string }) {
-  const [url, setUrl] = useState<string>('');
-  useEffect(() => {
-    let objectUrl: string;
-    const fetch = async () => {
-      const { data } = await supabase.storage.from('posts').download(path);
-      if (data) {
-        objectUrl = URL.createObjectURL(data);
-        setUrl(objectUrl);
-      }
-    };
-    fetch();
-    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [path]);
-
-  if (!url) return <div className="w-full h-full animate-pulse bg-slate-200" />;
-  return <img src={url} alt="Resource" className="w-full h-full object-cover" />;
 }

@@ -1,64 +1,72 @@
 import { NavLink } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Users, 
-  Calendar, 
-  Image as ImageIcon, 
-  BarChart3, 
-  Settings,
-  Megaphone,
-  Zap
-} from 'lucide-react';
 import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { useAuth } from '../../contexts/AuthContext';
 
-function cn(...inputs: any[]) {
-  return twMerge(clsx(inputs));
-}
-
-const navigation = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Accounts', href: '/accounts', icon: Users },
-  { name: 'Campaigns', href: '/campaigns', icon: Megaphone },
-  { name: 'Scheduled Posts', href: '/posts', icon: Calendar },
-  { name: 'Media Library', href: '/media', icon: ImageIcon },
-  { name: 'Automation', href: '/automation', icon: Zap },
-  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
-  { name: 'Settings', href: '/settings', icon: Settings },
+const navItems = [
+  { icon: 'dashboard', label: 'Panel de Control', path: '/dashboard' },
+  { icon: 'calendar_month', label: 'Mensajes Programados', path: '/posts' },
+  { icon: 'campaign', label: 'Campañas', path: '/campaigns' },
+  { icon: 'perm_media', label: 'Biblioteca de Medios', path: '/media' },
+  { icon: 'auto_awesome', label: 'Automatización', path: '/automation' },
+  { icon: 'group_add', label: 'Cuentas Sociales', path: '/accounts' },
+  { icon: 'settings', label: 'Configuración', path: '/settings' },
 ];
 
 export default function Sidebar() {
+  const { user } = useAuth();
+
   return (
-    <div className="hidden lg:flex lg:flex-shrink-0">
-      <div className="flex flex-col w-72">
-        <div className="flex flex-col h-0 flex-1 bg-slate-900 border-r border-slate-800">
-          <div className="flex items-center h-20 flex-shrink-0 px-8">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-                <Zap className="text-white fill-white" size={24} />
-              </div>
-              <span className="text-2xl font-bold text-white tracking-tight">FlowPost</span>
-            </div>
-          </div>
-          <nav className="mt-6 flex-1 px-4 space-y-2">
-            {navigation.map((item) => (
-              <NavLink
-                key={item.name}
-                to={item.href}
-                className={({ isActive }) => cn(
-                  'group flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200',
-                  isActive 
-                    ? 'bg-blue-600/10 text-blue-400 shadow-sm' 
-                    : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'
-                )}
-              >
-                <item.icon className="mr-3 h-5 w-5 flex-shrink-0" />
-                {item.name}
-              </NavLink>
-            ))}
-          </nav>
+    <aside className="fixed left-0 top-0 h-screen w-[280px] bg-slate-50 dark:bg-slate-900/50 flex flex-col py-8 px-6 space-y-2 font-manrope text-sm font-medium tracking-tight z-50">
+      <div className="mb-10 px-2 flex items-center gap-3">
+        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white">
+          <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>auto_awesome</span>
+        </div>
+        <div>
+          <h1 className="text-xl font-bold tracking-tighter text-indigo-600 dark:text-indigo-400">The Curator</h1>
+          <p className="text-[10px] uppercase tracking-[0.1em] text-slate-500">Plataforma de Automatización</p>
         </div>
       </div>
-    </div>
+
+      <nav className="flex-1 space-y-1">
+        {navItems.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            className={({ isActive }) =>
+              clsx(
+                'flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200',
+                isActive
+                  ? 'bg-white dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:translate-y-[-1px]'
+              )
+            }
+          >
+            {({ isActive }) => (
+              <>
+                <span className="material-symbols-outlined" style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>
+                  {item.icon}
+                </span>
+                <span>{item.label}</span>
+              </>
+            )}
+          </NavLink>
+        ))}
+      </nav>
+
+      <div className="pt-6 mt-6 border-t border-slate-200 dark:border-slate-800 space-y-1">
+        <button className="w-full bg-indigo-600 text-white rounded-xl py-3 px-4 font-semibold text-sm hover:opacity-90 transition-all mb-4 flex items-center justify-center gap-2">
+          <span className="material-symbols-outlined text-lg">stars</span>
+          Mejorar Plan
+        </button>
+        <button className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg transition-all">
+          <img 
+            src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.email || 'user'}`} 
+            alt="User Avatar" 
+            className="w-6 h-6 rounded-full object-cover"
+          />
+          <span className="truncate">{user?.email || 'Perfil de Usuario'}</span>
+        </button>
+      </div>
+    </aside>
   );
 }

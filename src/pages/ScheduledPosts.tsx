@@ -17,6 +17,11 @@ function ImagePreview({ path }: { path: string }) {
   const [url, setUrl] = useState<string>('');
 
   useEffect(() => {
+    if (path.startsWith('http')) {
+      setUrl(path);
+      return;
+    }
+
     let objectUrl: string;
     const loadImg = async () => {
       try {
@@ -80,9 +85,6 @@ export default function ScheduledPosts() {
     if (!confirm('¿Estás seguro de que quieres eliminar este post?')) return;
 
     try {
-      // 1. Eliminar de Storage
-      await supabase.storage.from('posts').remove([path]);
-      
       // 2. Eliminar de DB
       const { error } = await supabase.from('posts').delete().eq('id', id);
       if (error) throw error;
@@ -173,22 +175,19 @@ export default function ScheduledPosts() {
                       <span className="material-symbols-outlined text-[14px]">
                         {post.platform === 'facebook' ? 'thumb_up' : 'photo_camera'}
                       </span>
+                      <div className="space-y-1 overflow-hidden">
+                        <div className="flex items-center gap-2">
+                          {post.copies ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black bg-primary/10 text-primary border border-primary/20 uppercase tracking-tighter">Copy: {post.copies.name}</span>
+                          ) : (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-tighter">Manual</span>
+                          )}
+                        </div>
+                        <p className="text-sm text-slate-600 truncate font-medium">
+                          {post.copies ? 'Usando copy guardado...' : (post.custom_caption || post.caption || 'Sin texto')}
+                        </p>
+                      </div>
                     </span>
-                  </div>
-                   <div className="space-y-1 overflow-hidden">
-                    <div className="flex items-center gap-2">
-                       {/* @ts-ignore */}
-                      {post.copies ? (
-                         /* @ts-ignore */
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black bg-primary/10 text-primary border border-primary/20 uppercase tracking-tighter">Copy: {post.copies.name}</span>
-                      ) : (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-tighter">Manual</span>
-                      )}
-                    </div>
-                    <p className="text-sm text-slate-600 truncate font-medium">
-                       {/* @ts-ignore */}
-                      {post.copies ? 'Usando copy guardado...' : (post.caption || 'Sin texto')}
-                    </p>
                   </div>
                 </div>
 

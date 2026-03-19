@@ -48,6 +48,7 @@ export default function AssignCopies() {
 
   const getImageUrl = (path: string) => {
     if (!path) return '';
+    if (path.startsWith('http')) return path;
     const { data } = supabase.storage.from('posts').getPublicUrl(path);
     return data.publicUrl;
   };

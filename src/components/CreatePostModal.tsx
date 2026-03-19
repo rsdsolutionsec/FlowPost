@@ -18,20 +18,16 @@ const sanitizePath = (name: string) => {
     .replace(/_{2,}/g, '_'); // Collapse multiple underscores
 };
 
-interface ImagePreviewProps {
-  path: string;
-  fileName: string;
-  selected: boolean;
-  onClick: () => void;
-  isFolder?: boolean;
-}
-
-function ImagePreview({ path, fileName, selected, onClick, isFolder }: ImagePreviewProps) {
+const ImagePreview: React.FC<{ path: string; fileName: string; selected: boolean; onClick: () => void; isFolder?: boolean }> = ({ path, fileName, selected, onClick, isFolder }) => {
   const [url, setUrl] = useState<string>('');
   const [loading, setLoading] = useState(!isFolder);
 
   useEffect(() => {
     if (isFolder) return;
+    if (path.startsWith('http')) {
+      setUrl(path);
+      return;
+    }
     
     let objectUrl: string;
     const loadImg = async () => {
@@ -154,14 +150,15 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
   useEffect(() => {
     if (isOpen && user && imageSource === 'library') {
       const fetchLibraryMedia = async () => {
-        const folderPath = mediaCurrentFolder ? `${user.id}/${mediaCurrentFolder}` : user.id;
-        const { data, error } = await supabase.storage.from('posts').list(folderPath, {
-          limit: 100,
-          sortBy: { column: 'created_at', order: 'desc' }
-        });
+        const folderIdentifier = mediaCurrentFolder ? `root/${mediaCurrentFolder}` : 'root';
+        const { data, error } = await supabase.from('media')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('path', folderIdentifier)
+          .order('created_at', { ascending: false });
         
         if (!error && data) {
-          setLibraryItems(data.filter(f => f.name !== '.emptyFolderPlaceholder'));
+          setLibraryItems(data);
         }
       };
       fetchLibraryMedia();
@@ -211,20 +208,41 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
       let filePath = '';
 
       if (imageSource === 'upload' && imageFile) {
-        // 1. Subir archivo a Supabase Storage
+        // 1. Subir a R2 vía backend presigned
         const fileExt = imageFile.name.split('.').pop();
         const safeBaseName = sanitizePath(imageFile.name.replace(/\.[^/.]+$/, ""));
         const fileName = `${Math.random().toString(36).substring(2)}_${safeBaseName}.${fileExt}`;
-        filePath = `${user.id}/${fileName}`;
+        const presignPath = `${user.id}/${fileName}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from('posts')
-          .upload(filePath, imageFile);
-
-        if (uploadError) throw uploadError;
+        const presignRes = await fetch('/api/media/presign', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ filename: presignPath, contentType: imageFile.type })
+        });
+        if (!presignRes.ok) throw new Error('Failed to generate presigned URL');
+        const { url, publicUrl } = await presignRes.json();
+        
+        const uploadRes = await fetch(url, {
+           method: 'PUT',
+           headers: { 'Content-Type': imageFile.type },
+           body: imageFile
+        });
+        if (!uploadRes.ok) throw new Error('Upload to R2 failed');
+        
+        // Guardamos también en tabla media
+        await supabase.from('media').insert({
+          user_id: user.id,
+          name: fileName,
+          path: 'root', // Por defecto a root cuando se programa directo
+          mimetype: imageFile.type,
+          size: imageFile.size,
+          url: publicUrl
+        });
+        
+        filePath = publicUrl;
       } else {
         // Usar archivo existente de la biblioteca
-        filePath = `${user.id}/${selectedLibraryFile}`;
+        filePath = selectedLibraryFile;
       }
 
       // 2. Insertar en la tabla posts
@@ -265,8 +283,8 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
   };
 
   // Separar folders de files nativamente para el UI
-  const folders = libraryItems.filter(f => !f.id);
-  const files = libraryItems.filter(f => f.id);
+  const folders = libraryItems.filter(f => f.mimetype === 'folder');
+  const files = libraryItems.filter(f => f.mimetype !== 'folder');
 
   return (
     <AnimatePresence>
@@ -448,14 +466,15 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
 
                             {/* Render Files */}
                             {files.map(file => {
-                               const fullPath = mediaCurrentFolder ? `${mediaCurrentFolder}/${file.name}` : file.name;
                                return (
                                 <ImagePreview 
                                   key={file.id} 
-                                  path={`${user.id}/${fullPath}`} 
+                                  path={file.url} 
                                   fileName={file.name} 
-                                  selected={selectedLibraryFile === fullPath}
-                                  onClick={() => handleItemClick(file)}
+                                  selected={selectedLibraryFile === file.url}
+                                  onClick={() => {
+                                    setSelectedLibraryFile(file.url);
+                                  }}
                                 />
                                );
                             })}

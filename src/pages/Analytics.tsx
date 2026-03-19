@@ -123,6 +123,10 @@ function MetricCard({ title, value, icon, color }: any) {
 function AssetSmall({ path }: { path: string }) {
   const [url, setUrl] = useState<string>('');
   useEffect(() => {
+    if (path.startsWith('http')) {
+      setUrl(path);
+      return;
+    }
     let objectUrl: string;
     const fetch = async () => {
       const { data } = await supabase.storage.from('posts').download(path);

@@ -1,5 +1,5 @@
-import { supabaseAdmin } from './supabase.ts';
-import { publishToFacebook } from './facebook.ts';
+import { supabaseAdmin } from './supabase';
+import { publishToFacebook } from './facebook';
 
 /**
  * Función principal para procesar posts programados.

@@ -50,7 +50,7 @@ export default function CopyLibrary() {
       setCopies(copiesRes.data || []);
 
       if (postsRes.data) {
-        setSentCopyIds(new Set(postsRes.data.map((p: any) => p.copy_id)));
+        setSentCopyIds(new Set(postsRes.data.map((p: { copy_id: string }) => p.copy_id)));
       }
     } catch (error: any) {
       console.error('Error fetching copies:', error.message);
@@ -68,7 +68,7 @@ export default function CopyLibrary() {
     try {
       const { error } = await supabase.from('copies').delete().eq('id', id);
       if (error) throw error;
-      setCopies(copies.filter(c => c.id !== id));
+      setCopies(copies.filter((c: Copy) => c.id !== id));
     } catch (error: any) {
       alert('Error al eliminar: ' + error.message);
     }
@@ -81,7 +81,7 @@ export default function CopyLibrary() {
 
   const handleSendAll = async () => {
     if (!user) return;
-    const unsentCopies = copies.filter(c => !sentCopyIds.has(c.id));
+    const unsentCopies = copies.filter((c: Copy) => !sentCopyIds.has(c.id));
     if (unsentCopies.length === 0) {
       alert('Todos los copies ya han sido enviados a programados.');
       return;
@@ -114,12 +114,12 @@ export default function CopyLibrary() {
         .eq('user_id', user.id);
 
       const mediaByName = new Map<string, string>();
-      (allMedia || []).forEach((m: any) => {
+      (allMedia || []).forEach((m: { name: string; url: string }) => {
         mediaByName.set(m.name.toLowerCase(), m.url);
       });
 
       // Build posts array
-      const postsToInsert = unsentCopies.map(copy => {
+      const postsToInsert = unsentCopies.map((copy: Copy) => {
         // Resolve media URL from library
         let imageUrl = '';
         if (copy.media_path) {
@@ -153,7 +153,7 @@ export default function CopyLibrary() {
       if (error) throw error;
 
       const newSent = new Set(sentCopyIds);
-      unsentCopies.forEach(c => newSent.add(c.id));
+      unsentCopies.forEach((c: Copy) => newSent.add(c.id));
       setSentCopyIds(newSent);
       setSendAllResult({ sent: unsentCopies.length, skipped: copies.length - unsentCopies.length });
     } catch (error: any) {
@@ -163,7 +163,7 @@ export default function CopyLibrary() {
     }
   };
 
-  const unsentCount = copies.filter(c => !sentCopyIds.has(c.id)).length;
+  const unsentCount = copies.filter((c: Copy) => !sentCopyIds.has(c.id)).length;
 
   return (
     <motion.div 
@@ -248,7 +248,7 @@ export default function CopyLibrary() {
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
         onSuccess={fetchCopies}
-        editingCopy={editingCopy}
+        editCopy={editingCopy}
       />
 
       <ImportCopyModal 
@@ -295,7 +295,7 @@ export default function CopyLibrary() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {copies.map((copy) => {
+          {copies.map((copy: Copy) => {
             const isSent = sentCopyIds.has(copy.id);
             return (
               <div key={copy.id} className={`bg-white p-8 rounded-[2.5rem] shadow-sm border flex flex-col justify-between hover:shadow-xl hover:translate-y-[-4px] transition-all duration-300 group relative overflow-hidden ${isSent ? 'border-emerald-100' : 'border-slate-100'}`}>

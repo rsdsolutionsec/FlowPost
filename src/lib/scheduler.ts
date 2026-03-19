@@ -1,5 +1,5 @@
-import { supabaseAdmin } from './supabase';
-import { publishToFacebook } from './facebook';
+import { supabaseAdmin } from './supabase.js';
+import { publishToFacebook } from './facebook.js';
 
 /**
  * Función principal para procesar posts programados.
@@ -62,7 +62,7 @@ export async function processScheduledPosts() {
       }
 
       // 3. Publicar en Facebook (pasando el binario y credenciales dinámicas)
-      console.log(`[Scheduler] Enviando binario a Facebook (Page: ${pageData.id})...`);
+      console.log(`[Scheduler] Enviando binario a Facebook (Page: ${pageData.page_id})...`);
       const result = await publishToFacebook(
         imageData, 
         post.caption,

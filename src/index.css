@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @source "../index.html";
-@source "./**/*.{js,ts,jsx,tsx}";
+@source "./**/*.{ts,tsx}";
 
 @theme {
   --color-on-primary-fixed: #160066;

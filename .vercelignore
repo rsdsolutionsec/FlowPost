@@ -1,0 +1,21 @@
+# Legacy code
+marketing_system
+requirements.txt
+copies.txt
+scheduler.csv
+published.json
+
+# Local logs and config
+logs
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Node modules and build output
+node_modules
+dist
+.vercel
+.git
+.gemini

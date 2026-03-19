@@ -1,68 +1,65 @@
-import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { processScheduledPosts } from '../src/lib/scheduler';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+/**
+ * Handler de la API /api/publish
+ * Dispara el proceso de publicación de posts programados.
+ */
+export default async function handler(
+  request: VercelRequest,
+  response: VercelResponse
+) {
+  const now = new Date().toISOString();
+  console.log(`[Cron Job] Execution started at ${now}`);
 
-dotenv.config({ path: join(__dirname, '../.env') });
+  // 1. Validate Secret 
+  // Vercel Cron Jobs send "Authorization: Bearer <CRON_SECRET>" by default
+  // But we also support ?secret=CRON_SECRET as requested
+  const authHeader = request.headers.authorization;
+  const querySecret = request.query.secret;
+  const secretKey = process.env.CRON_SECRET;
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const isAuthorized = secretKey && (
+    authHeader === `Bearer ${secretKey}` || 
+    querySecret === secretKey
+  );
 
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('Missing Supabase environment variables');
-  process.exit(1);
-}
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-async function publishPendingPosts() {
-  console.log('Checking for pending posts...');
-  
-  const { data: posts, error } = await supabase
-    .from('scheduled_posts')
-    .select('*, accounts(*)')
-    .eq('status', 'scheduled')
-    .lte('scheduled_for', new Date().toISOString());
-
-  if (error) {
-    console.error('Error fetching posts:', error);
-    return;
+  if (!isAuthorized) {
+    console.warn(`[Cron Job] Unauthorized attempt at ${now}`);
+    return response.status(401).json({ 
+      error: 'Unauthorized',
+      message: 'Invalid or missing CRON_SECRET token.'
+    });
   }
 
-  console.log(`Found ${posts?.length || 0} pending posts`);
+  try {
+    console.log('[Cron Job] Secret validated. Processing scheduled posts...');
+    const result = await processScheduledPosts();
 
-  for (const post of posts || []) {
-    try {
-      console.log(`Publishing post ${post.id} to ${post.platform}...`);
-      
-      // Here you would implement the actual Meta Graph API call
-      // For now, we'll just mark it as published
-      
-      const { error: updateError } = await supabase
-        .from('scheduled_posts')
-        .update({ 
-          status: 'published',
-          published_at: new Date().toISOString()
-        })
-        .eq('id', post.id);
+    const duration = new Date().getTime() - new Date(now).getTime();
+    console.log(`[Cron Job] Execution finished. Processed: ${result.processed}, Succeeded: ${result.succeeded}, Failed: ${result.failed}. Duration: ${duration}ms`);
 
-      if (updateError) throw updateError;
-      
-      console.log(`Successfully published post ${post.id}`);
-    } catch (err) {
-      console.error(`Failed to publish post ${post.id}:`, err);
-      
-      await supabase
-        .from('scheduled_posts')
-        .update({ status: 'failed' })
-        .eq('id', post.id);
-    }
+    return response.status(200).json({
+      job: 'publish_scheduled_posts',
+      executed_at: now,
+      finished_at: new Date().toISOString(),
+      performance: {
+        duration_ms: duration
+      },
+      results: {
+        total_posts_processed: result.processed || 0,
+        successful_publishes: result.succeeded || 0,
+        failed_publishes: result.failed || 0
+      },
+      status: result.success ? 'success' : 'partial_failure'
+    });
+  } catch (error: any) {
+    console.error('[Cron Job] Critical error during execution:', error);
+    return response.status(500).json({
+      job: 'publish_scheduled_posts',
+      executed_at: now,
+      error: 'Internal Server Error',
+      details: error.message
+    });
   }
 }
-
-// Run every minute
-setInterval(publishPendingPosts, 60000);
-publishPendingPosts();

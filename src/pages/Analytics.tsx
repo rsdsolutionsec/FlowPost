@@ -49,45 +49,50 @@ export default function Analytics() {
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
+      className="space-y-12"
     >
-      <div className="mb-12 flex justify-between items-end">
+      <div className="flex justify-between items-end">
         <div>
-          <h2 className="text-4xl font-extrabold tracking-tight text-on-surface font-headline">Analíticas</h2>
-          <p className="text-slate-500 mt-2 font-medium">Mide el rendimiento de tus publicaciones y campañas.</p>
+          <h2 className="text-4xl font-black tracking-tight text-slate-900 font-headline">Sigue tu Crecimiento</h2>
+          <p className="text-slate-500 mt-2 font-medium">Mira cómo evoluciona tu presencia en redes.</p>
         </div>
       </div>
 
-      <div className="space-y-8">
+      <div className="space-y-10">
         {/* Top Metrics Row */}
-        <div className="grid grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <MetricCard title="Total" value={stats.total} icon="analytics" color="indigo" />
           <MetricCard title="Publicados" value={stats.published} icon="done_all" color="emerald" />
           <MetricCard title="Programados" value={stats.scheduled} icon="schedule" color="amber" />
-          <MetricCard title="Fallidos" value={stats.failed} icon="error" color="rose" />
+          <MetricCard title="Con Errores" value={stats.failed} icon="error" color="rose" />
         </div>
 
         {/* Charts and Lists */}
-        <div className="grid grid-cols-3 gap-6">
-          <div className="col-span-2 bg-surface-container-lowest p-8 rounded-2xl shadow-sm ghost-border min-h-[400px] flex flex-col justify-center items-center">
-            <span className="material-symbols-outlined text-6xl text-slate-200 mb-4">query_stats</span>
-            <p className="text-slate-400 font-bold">Gráficos de rendimiento en desarrollo</p>
-            <p className="text-xs text-slate-300 mt-2">Conectando con Meta Insights API próximamente...</p>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 bg-white p-10 rounded-[2.5rem] shadow-sm border border-slate-100 min-h-[400px] flex flex-col justify-center items-center text-center">
+            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-6">
+              <span className="material-symbols-outlined text-4xl text-slate-200">query_stats</span>
+            </div>
+            <p className="text-slate-900 font-black text-xl mb-2">Resultados en tiempo real</p>
+            <p className="text-slate-400 font-medium max-w-xs">Estamos preparando la conexión con tus redes para mostrarte quién te ve más.</p>
           </div>
 
-          <div className="bg-surface-container-lowest p-8 rounded-2xl shadow-sm ghost-border flex flex-col">
-            <h3 className="font-bold text-lg text-on-surface mb-6 font-headline">Publicaciones Publicadas</h3>
-            <div className="space-y-4 flex-1">
+          <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col">
+            <h3 className="font-black text-xl text-slate-900 mb-8 font-headline">Lo último</h3>
+            <div className="space-y-6 flex-1">
               {recentBest.length === 0 ? (
-                 <p className="text-slate-400 text-sm italic py-10 text-center">No hay publicaciones terminadas aún.</p>
+                 <div className="py-12 text-center">
+                   <p className="text-slate-300 font-bold italic">No hay datos aún.</p>
+                 </div>
               ) : (
                 recentBest.map(post => (
-                  <div key={post.id} className="flex gap-4 items-center p-3 hover:bg-surface-container-low rounded-xl transition-colors">
-                    <div className="w-12 h-12 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0">
+                  <div key={post.caption} className="flex gap-4 items-center group">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-100 overflow-hidden flex-shrink-0 group-hover:scale-105 transition-transform">
                        <AssetSmall path={post.image_path} />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-on-surface truncate">{post.caption || 'Sin texto'}</p>
-                      <p className="text-[10px] text-emerald-600 font-black uppercase">Terminado</p>
+                      <p className="text-sm font-black text-slate-900 truncate">{post.caption || 'Sem texto'}</p>
+                      <p className="text-[10px] text-emerald-600 font-black uppercase tracking-widest">Enviado</p>
                     </div>
                   </div>
                 ))
@@ -108,14 +113,12 @@ function MetricCard({ title, value, icon, color }: any) {
     rose: 'bg-rose-50 text-rose-600'
   };
   return (
-    <div className="bg-surface-container-lowest p-6 rounded-2xl shadow-sm ghost-border">
-      <div className="flex justify-between items-start mb-4">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${colorMap[color]}`}>
-          <span className="material-symbols-outlined">{icon}</span>
-        </div>
+    <div className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100 group hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-500">
+      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-6 ${colorMap[color]} group-hover:scale-110 transition-transform`}>
+        <span className="material-symbols-outlined">{icon}</span>
       </div>
-      <h3 className="text-3xl font-extrabold text-on-surface tracking-tight">{value}</h3>
-      <p className="text-sm font-medium text-on-surface-variant mt-1">{title}</p>
+      <h3 className="text-4xl font-black text-slate-900 tracking-tight font-headline">{value}</h3>
+      <p className="text-xs font-black text-slate-400 uppercase tracking-widest mt-1">{title}</p>
     </div>
   );
 }

@@ -7,7 +7,8 @@ interface PrefillData {
   copyId: string;
   copyName?: string;
   scheduledAt?: string;    // ISO string from suggested_at
-  mediaUrl?: string;       // R2 public URL
+  mediaUrl?: string;       // direct R2 public URL (http)
+  mediaPath?: string;      // relative path like 'campana_vistas/vista_mesero/2.PNG'
   mediaFileName?: string;  // display name
 }
 
@@ -163,10 +164,29 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
             const local = new Date(d.getTime() - offset).toISOString().slice(0, 16);
             setFormData(prev => ({ ...prev, scheduled_at: local }));
           }
+          // Auto-select media: if direct URL provided, use it immediately
           if (prefill.mediaUrl) {
             setImageSource('library');
             setSelectedLibraryFile(prefill.mediaUrl);
             setSelectedLibraryFileName(prefill.mediaFileName || prefill.mediaUrl.split('/').pop() || 'media');
+          }
+          // Auto-resolve from library by filename if a relative path is given
+          if (prefill.mediaPath && !prefill.mediaUrl) {
+            const fileName = prefill.mediaPath.split('/').pop();
+            if (fileName && user) {
+              const { data: mediaMatch } = await supabase
+                .from('media')
+                .select('url, name')
+                .eq('user_id', user.id)
+                .ilike('name', fileName)
+                .limit(1)
+                .single();
+              if (mediaMatch?.url) {
+                setImageSource('library');
+                setSelectedLibraryFile(mediaMatch.url);
+                setSelectedLibraryFileName(mediaMatch.name);
+              }
+            }
           }
         }
       };

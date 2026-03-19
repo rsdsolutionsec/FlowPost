@@ -54,11 +54,18 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
       } else {
         const lines = text.split(/\r?\n/).filter(l => l.trim());
         parsed = lines.map((line, i) => {
-          const [name, ...contentParts] = line.split('|');
-          const content = contentParts.join('|').trim();
+          const parts = line.split('|');
+          let name, content;
+          if (parts.length > 1) {
+            name = parts[0].trim() || `Imported TXT ${i + 1}`;
+            content = parts.slice(1).join('|').trim();
+          } else {
+            name = `Imported TXT ${i + 1}`;
+            content = line.trim();
+          }
           return {
-            name: name?.trim() || `Imported TXT ${i + 1}`,
-            content: content
+            name,
+            content
           };
         });
       }
@@ -91,7 +98,7 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
         onSuccess();
       }
     } catch (error: any) {
-      alert('Error en la importacin: ' + error.message);
+      alert('Error en la importación: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -198,7 +205,7 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
                             {preview.length > 50 && (
                               <tr>
                                 <td colSpan={2} className="px-4 py-2 text-center text-slate-300 font-medium italic">
-                                  ... y {preview.length - 50} copys m s
+                                  ... y {preview.length - 50} copys más
                                 </td>
                               </tr>
                             )}
@@ -216,9 +223,9 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
                     </span>
                   </div>
                   <div>
-                    <h4 className="text-2xl font-black text-slate-900 font-headline">Importacin Finalizada</h4>
+                    <h4 className="text-2xl font-black text-slate-900 font-headline">Importación Finalizada</h4>
                     <p className="text-slate-500 font-medium mt-1">
-                      {result.imported} copys importados con xito. {result.failed > 0 && `${result.failed} fallaron.`}
+                      {result.imported} copys importados con éxito. {result.failed > 0 && `${result.failed} fallaron.`}
                     </p>
                   </div>
                   {result.errors.length > 0 && (

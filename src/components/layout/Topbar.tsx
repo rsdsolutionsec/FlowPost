@@ -4,40 +4,37 @@ export default function Topbar() {
   const { user } = useAuth();
 
   return (
-    <header className="h-20 bg-surface flex items-center justify-between px-10">
-      <div className="flex-1">
-        <div className="relative max-w-md group">
-          <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-primary transition-colors text-[20px]">search</span>
-          <input 
-            type="text" 
-            placeholder="Buscar en el espacio de trabajo..." 
-            className="w-full bg-surface-container-low border-none rounded-2xl py-3 pl-12 pr-4 text-sm font-medium focus:ring-4 focus:ring-primary/5 transition-all placeholder:text-slate-400"
+    <header className="fixed top-0 right-0 h-[72px] left-[280px] z-40 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl shadow-sm dark:shadow-none flex justify-between items-center px-12 w-full font-manrope font-semibold">
+      <div className="flex items-center flex-1 max-w-xl">
+        <div className="relative w-full group">
+          <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors">search</span>
+          <input
+            type="text"
+            placeholder="Buscar contenido programado..."
+            className="w-full bg-surface-container-low border-none rounded-xl py-2.5 pl-12 pr-4 focus:ring-2 focus:ring-primary/20 focus:bg-white transition-all text-sm placeholder:text-outline/60"
           />
         </div>
       </div>
-
-      <div className="flex items-center gap-6">
-        <button className="w-11 h-11 flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface-variant transition-colors relative">
-          <span className="material-symbols-outlined text-[20px]">notifications</span>
-          <span className="absolute top-3 right-3 w-2 h-2 bg-rose-500 rounded-full border-2 border-surface"></span>
-        </button>
-
-        <div className="h-8 w-[1px] bg-slate-100"></div>
-
-        <div className="flex items-center gap-3 pl-2">
-          <div className="text-right hidden sm:block">
-            <p className="text-sm font-black text-on-surface leading-tight">Alex Rivera</p>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{user?.email}</p>
+      
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 border-r border-slate-100 pr-6">
+          <button className="p-2 text-slate-400 hover:text-primary transition-colors relative">
+            <span className="material-symbols-outlined text-[22px]">notifications</span>
+            <span className="absolute top-2 right-2 w-1.5 h-1.5 bg-rose-500 rounded-full border border-white"></span>
+          </button>
+          
+          <div className="w-10 h-10 rounded-full bg-slate-100 overflow-hidden border-2 border-white shadow-sm">
+            <img 
+              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.email || 'user'}`} 
+              alt="User Avatar" 
+              className="w-full h-full object-cover"
+            />
           </div>
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary to-indigo-600 p-[2px] shadow-lg shadow-primary/10">
-            <div className="w-full h-full rounded-[14px] bg-surface overflow-hidden">
-              <img 
-                src="https://i.pravatar.cc/150?img=68" 
-                alt="Avatar" 
-                className="w-full h-full object-cover"
-              />
-            </div>
-          </div>
+        </div>
+
+        <div className="text-right hidden sm:block">
+          <p className="text-xs font-black text-slate-800 leading-tight">Espacio Profesional</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate max-w-[120px]">{user?.email}</p>
         </div>
       </div>
     </header>

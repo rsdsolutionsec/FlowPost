@@ -7,7 +7,7 @@
   ],
   "functions": {
     "api/publish.ts": {
-      "includeFiles": "src/lib/**"
+      "includeFiles": "lib/**"
     }
   }
 }

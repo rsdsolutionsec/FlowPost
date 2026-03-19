@@ -22,6 +22,6 @@
     },
     "noEmit": true
   },
-  "include": ["src", "api", "vite.config.ts", "tsconfig.node.json"],
+  "include": ["src", "api", "lib", "vite.config.ts", "tsconfig.node.json"],
   "exclude": ["node_modules", "dist", "marketing_system"]
 }

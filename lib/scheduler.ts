@@ -52,13 +52,26 @@ export async function processScheduledPosts() {
       }
 
       console.log(`[Scheduler] Descargando imagen: ${post.image_path}`);
-      const { data: imageData, error: downloadError } = await supabaseAdmin
-        .storage
-        .from('posts')
-        .download(post.image_path);
+      let imageData: Blob;
 
-      if (downloadError || !imageData) {
-        throw new Error(`Error al descargar imagen de Storage: ${downloadError?.message || 'Archivo no encontrado'}`);
+      if (post.image_path.startsWith('http')) {
+        // Content from R2 via Public URL
+        const response = await fetch(post.image_path);
+        if (!response.ok) {
+          throw new Error(`Error al descargar imagen desde R2 (${response.status}): ${response.statusText}`);
+        }
+        imageData = await response.blob();
+      } else {
+        // Content from Supabase Storage (Legacy)
+        const { data, error: downloadError } = await supabaseAdmin
+          .storage
+          .from('posts')
+          .download(post.image_path);
+
+        if (downloadError || !data) {
+          throw new Error(`Error al descargar imagen de Storage: ${downloadError?.message || 'Archivo no encontrado'}`);
+        }
+        imageData = data;
       }
 
       const pageData = post.facebook_pages;

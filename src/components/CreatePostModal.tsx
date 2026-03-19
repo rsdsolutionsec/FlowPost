@@ -1,78 +1,223 @@
-import React, { useState } from 'react';
-import { X, Image as ImageIcon, Calendar, Clock, Send } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 interface CreatePostModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSuccess: () => void;
 }
 
-const CreatePostModal: React.FC<CreatePostModalProps> = ({ isOpen, onClose }) => {
-  const [content, setContent] = useState('');
+export function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalProps) {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [pages, setPages] = useState<any[]>([]);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [selectedPageId, setSelectedPageId] = useState<string>('');
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
+  const [formData, setFormData] = useState({
+    caption: '',
+    scheduled_at: '',
+    platform: 'facebook',
+  });
 
-  if (!isOpen) return null;
+  React.useEffect(() => {
+    if (isOpen && user) {
+      const fetchData = async () => {
+        const [pagesRes, campaignsRes] = await Promise.all([
+          supabase.from('facebook_pages').select('id, page_name').eq('is_active', true).eq('user_id', user.id),
+          supabase.from('campaigns').select('id, name').eq('user_id', user.id)
+        ]);
+        
+        if (pagesRes.data) {
+          setPages(pagesRes.data);
+          if (pagesRes.data.length > 0) setSelectedPageId(pagesRes.data[0].id);
+        }
+        if (campaignsRes.data) {
+          setCampaigns(campaignsRes.data);
+        }
+      };
+      fetchData();
+    }
+  }, [isOpen, user]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setImageFile(e.target.files[0]);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !imageFile || !selectedPageId) {
+      alert('Por favor selecciona una imagen y una página de destino');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const fileExt = imageFile.name.split('.').pop();
+      const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
+      const filePath = `${user.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('posts')
+        .upload(filePath, imageFile);
+
+      if (uploadError) throw uploadError;
+
+      const { error } = await supabase.from('posts').insert([
+        {
+          user_id: user.id,
+          facebook_page_id: selectedPageId,
+          campaign_id: selectedCampaignId || null,
+          caption: formData.caption,
+          image_path: filePath,
+          scheduled_at: new Date(formData.scheduled_at).toISOString(),
+          platform: formData.platform,
+          status: 'scheduled',
+        },
+      ]);
+
+      if (error) throw error;
+      
+      onSuccess();
+      onClose();
+      setFormData({ caption: '', scheduled_at: '', platform: 'facebook' });
+      setImageFile(null);
+      setSelectedCampaignId('');
+    } catch (error: any) {
+      alert('Error al crear el post: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-2xl bg-[#0F172A] border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-slate-700">
-          <h2 className="text-xl font-semibold text-white">Create New Post</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
-            <X size={24} />
-          </button>
-        </div>
-
-        <div className="p-6 space-y-6">
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="What's on your mind?"
-            className="w-full h-40 bg-slate-900/50 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all resize-none"
-          />
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-400 flex items-center gap-2">
-                <Calendar size={16} /> Schedule Date
-              </label>
-              <input
-                type="date"
-                className="w-full bg-slate-900/50 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-400 flex items-center gap-2">
-                <Clock size={16} /> Schedule Time
-              </label>
-              <input
-                type="time"
-                className="w-full bg-slate-900/50 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <button className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-slate-200 rounded-lg hover:bg-slate-700 transition-colors">
-              <ImageIcon size={20} />
-              Add Media
-            </button>
-          </div>
-        </div>
-
-        <div className="p-6 bg-slate-900/50 border-t border-slate-700 flex justify-end gap-3">
-          <button
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={onClose}
-            className="px-6 py-2 text-slate-300 hover:text-white transition-colors"
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            className="relative w-full max-w-lg bg-surface-container-lowest rounded-[2.5rem] shadow-2xl overflow-hidden ghost-border"
           >
-            Cancel
-          </button>
-          <button className="px-8 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-lg hover:from-blue-500 hover:to-indigo-500 transition-all shadow-lg shadow-blue-500/20 flex items-center gap-2">
-            <Send size={18} />
-            Schedule Post
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
+            <div className="p-8 space-y-6">
+              <div className="flex justify-between items-center">
+                <h3 className="text-2xl font-extrabold text-on-surface font-headline">Crear Nueva Publicación</h3>
+                <button onClick={onClose} className="p-2 hover:bg-surface-container-low rounded-full transition-colors">
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
 
-export default CreatePostModal;
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-on-surface-variant uppercase tracking-wider">Publicar en Página</label>
+                  {pages.length > 0 ? (
+                    <select
+                      required
+                      value={selectedPageId}
+                      onChange={(e) => setSelectedPageId(e.target.value)}
+                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface"
+                    >
+                      {pages.map(page => (
+                        <option key={page.id} value={page.id}>{page.page_name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl text-sm font-bold border border-rose-100 flex items-center gap-2">
+                       <span className="material-symbols-outlined">warning</span>
+                       <span>No tienes páginas conectadas.</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-on-surface-variant uppercase tracking-wider">Campaña (Opcional)</label>
+                  <select
+                    value={selectedCampaignId}
+                    onChange={(e) => setSelectedCampaignId(e.target.value)}
+                    className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface"
+                  >
+                    <option value="">Sin Campaña</option>
+                    {campaigns.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-on-surface-variant uppercase tracking-wider">Caption</label>
+                  <textarea
+                    required
+                    value={formData.caption}
+                    onChange={(e) => setFormData({ ...formData, caption: e.target.value })}
+                    className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 min-h-[100px] text-on-surface"
+                    placeholder="¿Qué quieres compartir?"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-on-surface-variant uppercase tracking-wider">Imagen</label>
+                  <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full p-6 bg-surface-container-low rounded-2xl border-2 border-dashed border-primary/20 hover:border-primary/50 transition-all cursor-pointer flex flex-col items-center justify-center gap-2"
+                  >
+                    <span className="material-symbols-outlined text-4xl text-primary/60">
+                      {imageFile ? 'check_circle' : 'cloud_upload'}
+                    </span>
+                    <span className="text-on-surface-variant font-bold text-xs">
+                      {imageFile ? imageFile.name : 'Subir imagen'}
+                    </span>
+                    <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-on-surface-variant uppercase tracking-wider">Fecha</label>
+                    <input
+                      type="datetime-local" required
+                      value={formData.scheduled_at}
+                      onChange={(e) => setFormData({ ...formData, scheduled_at: e.target.value })}
+                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-on-surface-variant uppercase tracking-wider">Plataforma</label>
+                    <select
+                      value={formData.platform}
+                      onChange={(e) => setFormData({ ...formData, platform: e.target.value })}
+                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm"
+                    >
+                      <option value="facebook">Facebook</option>
+                      <option value="instagram">Instagram</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="pt-4">
+                  <button
+                    type="submit" disabled={loading}
+                    className="w-full py-4 bg-primary text-white font-extrabold rounded-2xl hover:translate-y-[-2px] transition-all disabled:opacity-50"
+                  >
+                    {loading ? 'Procesando...' : 'Programar Publicación'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}

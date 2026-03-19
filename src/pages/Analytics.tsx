@@ -1,45 +1,137 @@
-import { BarChart3, TrendingUp, Users, Eye, MousePointer2, Share2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
-const stats = [
-  { name: 'Total Reach', value: '2.4M', change: '+12.5%', icon: Eye },
-  { name: 'Engagement Rate', value: '4.8%', change: '+0.4%', icon: MousePointer2 },
-  { name: 'Total Shares', value: '15.2k', change: '+8.2%', icon: Share2 },
-  { name: 'Audience Growth', value: '+1,240', change: '+18.4%', icon: Users },
-];
+export function Analytics() {
+  const { user } = useAuth();
+  const [stats, setStats] = useState({
+    total: 0,
+    published: 0,
+    scheduled: 0,
+    failed: 0
+  });
+  const [loading, setLoading] = useState(true);
+  const [recentBest, setRecentBest] = useState<any[]>([]);
 
-export default function Analytics() {
+  useEffect(() => {
+    async function fetchAnalytics() {
+      if (!user) return;
+      setLoading(true);
+      try {
+        const { data: posts, error } = await supabase
+          .from('posts')
+          .select('status, created_at, caption, image_path')
+          .eq('user_id', user.id);
+        
+        if (error) throw error;
+        
+        const counts = (posts || []).reduce((acc: any, post) => {
+          acc.total++;
+          acc[post.status] = (acc[post.status] || 0) + 1;
+          return acc;
+        }, { total: 0, published: 0, scheduled: 0, failed: 0 });
+
+        setStats(counts);
+        setRecentBest((posts || [])
+          .filter(p => p.status === 'published')
+          .slice(0, 3));
+      } catch (err) {
+        console.error('Error fetching analytics:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchAnalytics();
+  }, [user]);
+
   return (
-    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-700">
-      <div>
-        <h1 className="text-3xl font-bold text-white tracking-tight">Analytics</h1>
-        <p className="mt-2 text-slate-400">Deep dive into your social media performance metrics.</p>
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+    >
+      <div className="mb-12 flex justify-between items-end">
+        <div>
+          <h2 className="text-4xl font-extrabold tracking-tight text-on-surface font-headline">Analíticas</h2>
+          <p className="text-slate-500 mt-2 font-medium">Mide el rendimiento de tus publicaciones y campañas.</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat) => (
-          <div key={stat.name} className="glass-panel p-6 rounded-2xl hover:border-blue-500/50 transition-all">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-2 bg-blue-600/10 rounded-lg text-blue-500">
-                <stat.icon size={20} />
-              </div>
-              <span className="text-xs font-bold text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-full">
-                {stat.change}
-              </span>
-            </div>
-            <p className="text-sm font-medium text-slate-500">{stat.name}</p>
-            <p className="text-2xl font-bold text-white mt-1">{stat.value}</p>
+      <div className="space-y-8">
+        <div className="grid grid-cols-4 gap-6">
+          <MetricCard title="Total" value={stats.total} icon="analytics" color="indigo" />
+          <MetricCard title="Publicados" value={stats.published} icon="done_all" color="emerald" />
+          <MetricCard title="Programados" value={stats.scheduled} icon="schedule" color="amber" />
+          <MetricCard title="Fallidos" value={stats.failed} icon="error" color="rose" />
+        </div>
+
+        <div className="grid grid-cols-3 gap-6">
+          <div className="col-span-2 bg-surface-container-lowest p-8 rounded-2xl shadow-sm ghost-border min-h-[400px] flex flex-col justify-center items-center">
+            <span className="material-symbols-outlined text-6xl text-slate-200 mb-4">query_stats</span>
+            <p className="text-slate-400 font-bold">Gráficos de rendimiento en desarrollo</p>
+            <p className="text-xs text-slate-300 mt-2">Conectando con Meta Insights API próximamente...</p>
           </div>
-        ))}
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="glass-panel p-8 rounded-2xl h-96 flex items-center justify-center text-slate-600 border-dashed">
-          Reach Over Time Chart
-        </div>
-        <div className="glass-panel p-8 rounded-2xl h-96 flex items-center justify-center text-slate-600 border-dashed">
-          Engagement by Platform Chart
+          <div className="bg-surface-container-lowest p-8 rounded-2xl shadow-sm ghost-border flex flex-col">
+            <h3 className="font-bold text-lg text-on-surface mb-6 font-headline">Publicaciones Publicadas</h3>
+            <div className="space-y-4 flex-1">
+              {recentBest.length === 0 ? (
+                 <p className="text-slate-400 text-sm italic py-10 text-center">No hay publicaciones terminadas aún.</p>
+              ) : (
+                recentBest.map(post => (
+                  <div key={post.id} className="flex gap-4 items-center p-3 hover:bg-surface-container-low rounded-xl transition-colors">
+                    <div className="w-12 h-12 rounded-lg bg-slate-100 overflow-hidden flex-shrink-0">
+                       <AssetSmall path={post.image_path} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-on-surface truncate">{post.caption || 'Sin texto'}</p>
+                      <p className="text-[10px] text-emerald-600 font-black uppercase">Terminado</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </div>
+    </motion.div>
+  );
+}
+
+function MetricCard({ title, value, icon, color }: any) {
+  const colorMap: any = {
+    indigo: 'bg-indigo-50 text-indigo-600',
+    emerald: 'bg-emerald-50 text-emerald-600',
+    amber: 'bg-amber-50 text-amber-600',
+    rose: 'bg-rose-50 text-rose-600'
+  };
+  return (
+    <div className="bg-surface-container-lowest p-6 rounded-2xl shadow-sm ghost-border">
+      <div className="flex justify-between items-start mb-4">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${colorMap[color]}`}>
+          <span className="material-symbols-outlined">{icon}</span>
+        </div>
+      </div>
+      <h3 className="text-3xl font-extrabold text-on-surface tracking-tight">{value}</h3>
+      <p className="text-sm font-medium text-on-surface-variant mt-1">{title}</p>
     </div>
   );
+}
+
+function AssetSmall({ path }: { path: string }) {
+  const [url, setUrl] = useState<string>('');
+  useEffect(() => {
+    let objectUrl: string;
+    const fetch = async () => {
+      const { data } = await supabase.storage.from('posts').download(path);
+      if (data) {
+        objectUrl = URL.createObjectURL(data);
+        setUrl(objectUrl);
+      }
+    };
+    fetch();
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [path]);
+  if (!url) return <div className="w-full h-full bg-slate-100" />;
+  return <img src={url} alt="" className="w-full h-full object-cover" />;
 }

@@ -1,109 +1,215 @@
-import { Plus, Facebook, Instagram, RefreshCw, MoreVertical, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
-const accounts = [
-  { id: 1, name: 'RestoGestión Official', platform: 'facebook', image: '', followers: '12.4k', status: 'connected' },
-  { id: 2, name: 'RSD Solutions Tech', platform: 'facebook', image: '', followers: '1.2k', status: 'connected' },
-  { id: 3, name: 'RestoGestión IG', platform: 'instagram', image: '', followers: '45.8k', status: 'connected' },
-  { id: 4, name: 'Marketing Lab', platform: 'facebook', image: '', followers: '842', status: 'expired' },
-];
+interface FacebookPage {
+  id: string;
+  page_id: string;
+  page_name: string;
+  page_image_url: string;
+  is_active: boolean;
+  created_at: string;
+}
 
 export default function Accounts() {
+  const { user } = useAuth();
+  const [pages, setPages] = useState<FacebookPage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [newAccount, setNewAccount] = useState({ token: '', id: '', name: '' });
+
+  const fetchPages = async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('facebook_pages')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setPages(data || []);
+    } catch (error: any) {
+      console.error('Error fetching pages:', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPages();
+  }, [user]);
+
+  const handleConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAccount.token || !newAccount.id || !newAccount.name) return;
+    
+    setIsConnecting(true);
+    try {
+      const { error } = await supabase.from('facebook_pages').insert([
+        {
+          user_id: user?.id,
+          page_id: newAccount.id,
+          page_name: newAccount.name,
+          page_access_token: newAccount.token,
+          is_active: true
+        }
+      ]);
+      if (error) throw error;
+      setNewAccount({ token: '', id: '', name: '' });
+      setIsModalOpen(false);
+      fetchPages();
+    } catch (error: any) {
+      alert('Error al conectar: ' + error.message);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const togglePageStatus = async (id: string, currentStatus: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('facebook_pages')
+        .update({ is_active: !currentStatus })
+        .eq('id', id);
+      if (error) throw error;
+      setPages(pages.map(p => p.id === id ? { ...p, is_active: !currentStatus } : p));
+    } catch (error: any) {
+      alert('Error updating page:' + error.message);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('¿Desvincular esta página?')) return;
+    try {
+      const { error } = await supabase.from('facebook_pages').delete().eq('id', id);
+      if (error) throw error;
+      setPages(pages.filter(p => p.id !== id));
+    } catch (error: any) {
+      alert('Error: ' + error.message);
+    }
+  };
+
   return (
-    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-700">
-      <div className="flex items-center justify-between">
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="p-8"
+    >
+      <div className="mb-12 flex justify-between items-end">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Connected Accounts</h1>
-          <p className="mt-2 text-slate-400">Manage your social media profiles and their connection status.</p>
+          <h2 className="text-4xl font-extrabold tracking-tight text-on-surface font-headline">Cuentas Sociales</h2>
+          <p className="text-slate-500 mt-2 font-medium">Gestiona tus páginas y perfiles conectados.</p>
         </div>
-        <button className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-blue-500 hover:to-indigo-500 transition-all shadow-lg shadow-blue-500/25 active:scale-95">
-          <Plus size={20} />
-          Add Account
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-full hover:bg-indigo-700 transition-all flex items-center gap-2 shadow-lg shadow-indigo-200"
+        >
+          <span className="material-symbols-outlined">add_link</span>
+          <span>Conectar Facebook</span>
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
-        {accounts.map((account) => (
-          <div key={account.id} className="group glass-panel rounded-2xl overflow-hidden hover:border-blue-500/50 transition-all p-6">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-5">
-                <div className="relative">
-                  <div className="w-16 h-16 rounded-2xl bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center">
-                    {account.platform === 'facebook' ? (
-                      <Facebook className="text-[#1877F2]" size={32} />
-                    ) : (
-                      <Instagram className="text-[#E4405F]" size={32} />
-                    )}
-                  </div>
-                  <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center">
-                    {account.platform === 'facebook' ? (
-                      <Facebook className="text-[#1877F2]" size={12} />
-                    ) : (
-                      <Instagram className="text-[#E4405F]" size={12} />
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition-colors">
-                    {account.name}
-                  </h3>
-                  <div className="flex items-center gap-4 mt-1.5">
-                    <span className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-                      {account.platform} account
-                    </span>
-                    <span className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-                      {account.followers} followers
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <button className="p-2 text-slate-500 hover:text-white hover:bg-slate-800 rounded-lg transition-all">
-                <MoreVertical size={20} />
-              </button>
-            </div>
-
-            <div className="mt-8 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${account.status === 'connected' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`}></div>
-                <span className={`text-xs font-semibold ${account.status === 'connected' ? 'text-emerald-500' : 'text-red-500'}`}>
-                  {account.status === 'connected' ? 'Securely Connected' : 'Connection Expired'}
-                </span>
-                {account.status === 'connected' && <ShieldCheck size={14} className="text-emerald-500/50" />}
-              </div>
-              
-              <button className={cn(
-                "flex items-center gap-2 text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-lg transition-all",
-                account.status === 'connected' 
-                  ? "text-slate-400 hover:text-white hover:bg-slate-800"
-                  : "bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-500/20"
-              )}>
-                <RefreshCw size={14} className={account.status === 'expired' ? 'animate-spin-slow' : ''} />
-                {account.status === 'connected' ? 'Sync Profile' : 'Reconnect Now'}
-              </button>
-            </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {loading ? (
+          <div className="col-span-full text-center py-20 text-slate-400 font-bold">Cargando cuentas...</div>
+        ) : pages.length === 0 ? (
+          <div className="col-span-full text-center py-20 bg-slate-50 rounded-[2.5rem] border-2 border-dashed border-slate-200">
+            <span className="material-symbols-outlined text-6xl text-slate-300 mb-4">manage_accounts</span>
+            <p className="text-slate-500 font-bold text-lg">No has conectado ninguna página aún.</p>
           </div>
-        ))}
+        ) : (
+          pages.map((page) => (
+            <div key={page.id} className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 hover:shadow-md transition-shadow relative overflow-hidden group">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600">
+                  <span className="material-symbols-outlined text-3xl">facebook</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-bold text-lg text-slate-800 truncate">{page.page_name}</h3>
+                  <p className="text-xs text-slate-400 font-mono tracking-tighter truncate">ID: {page.page_id}</p>
+                </div>
+                <button 
+                  onClick={() => handleDelete(page.id)}
+                  className="p-2 text-rose-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
+                >
+                  <span className="material-symbols-outlined">delete_forever</span>
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${page.is_active ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                  <span className={`text-xs font-bold uppercase tracking-wider ${page.is_active ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    {page.is_active ? 'Activo' : 'Inactivo'}
+                  </span>
+                </div>
+                <button 
+                  onClick={() => togglePageStatus(page.id, page.is_active)}
+                  className={`text-xs font-black px-4 py-2 rounded-full transition-colors ${
+                    page.is_active ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                  }`}
+                >
+                  {page.is_active ? 'Pausar' : 'Activar'}
+                </button>
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
-      <div className="bg-blue-600/10 border border-blue-500/20 rounded-2xl p-8 flex items-start gap-6 relative overflow-hidden group">
-        <div className="absolute right-0 top-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl group-hover:bg-blue-500/10 transition-all pointer-events-none"></div>
-        <div className="p-4 bg-blue-600 rounded-2xl shadow-xl shadow-blue-500/20">
-          <ShieldCheck className="text-white" size={32} />
-        </div>
-        <div className="space-y-2">
-          <h3 className="text-xl font-bold text-white">Security Tip: Access Tokens</h3>
-          <p className="text-slate-400 leading-relaxed max-w-2xl">
-            We use fine-grained access tokens to manage your accounts. Tokens generally expire every 60 days. 
-            We'll notify you via email 7 days before an account needs reconnection.
-          </p>
-          <button className="text-blue-400 text-sm font-bold uppercase tracking-widest hover:text-blue-300 transition-colors mt-4">
-            Learn more about security →
-          </button>
-        </div>
-      </div>
-    </div>
+      <AnimatePresence>
+        {isModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+               onClick={() => setIsModalOpen(false)}
+               className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            />
+            <motion.div 
+               initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+               className="relative w-full max-w-md bg-white rounded-[2.5rem] p-10 shadow-2xl"
+            >
+              <h3 className="text-2xl font-black mb-6">Conectar Página</h3>
+              <form onSubmit={handleConnect} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 px-2">Page Name</label>
+                  <input 
+                    required type="text" placeholder="Ej: Mi Negocio" 
+                    value={newAccount.name} onChange={e => setNewAccount({...newAccount, name: e.target.value})}
+                    className="w-full p-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 px-2">Page ID</label>
+                  <input 
+                    required type="text" placeholder="ID de la página" 
+                    value={newAccount.id} onChange={e => setNewAccount({...newAccount, id: e.target.value})}
+                    className="w-full p-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 px-2">Access Token</label>
+                  <input 
+                    required type="password" placeholder="Token de acceso (EAA...)" 
+                    value={newAccount.token} onChange={e => setNewAccount({...newAccount, token: e.target.value})}
+                    className="w-full p-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+                <button 
+                  type="submit" disabled={isConnecting}
+                  className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-700 transition-all disabled:opacity-50 mt-4 shadow-lg shadow-indigo-100"
+                >
+                  {isConnecting ? 'Guardando...' : 'Guardar Conexión'}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
-}
-
-function cn(...inputs: any[]) {
-  return inputs.filter(Boolean).join(' ');
 }

@@ -1,116 +1,192 @@
-import { Megaphone, Plus, Search, Filter, ArrowUpRight, BarChart2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
-const campaigns = [
-  { id: 1, name: 'Easter Promotion 2026', status: 'Running', reach: '1.2M', engagement: '4.5%', budget: '$1,200', performance: 'up' },
-  { id: 2, name: 'Spring Fresh Start', status: 'Draft', reach: '-', engagement: '-', budget: '$500', performance: 'neutral' },
-  { id: 3, name: 'RestoGestión Launch', status: 'Completed', reach: '5.6M', engagement: '12.8%', budget: '$4,500', performance: 'up' },
-];
+interface Campaign {
+  id: string;
+  name: string;
+  description: string;
+  status: 'active' | 'draft' | 'completed';
+  created_at: string;
+}
 
-export default function Campaigns() {
+interface Post {
+  id: string;
+  image_path: string;
+  caption: string;
+}
+
+export function Campaigns() {
+  const { user } = useAuth();
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [assets, setAssets] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchCampaigns = async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('campaigns')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setCampaigns(data || []);
+      if (data && data.length > 0 && !selectedCampaign) {
+        setSelectedCampaign(data[0]);
+      }
+    } catch (error: any) {
+      console.error('Error fetching campaigns:', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAssets = async (campaignId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('id, image_path, caption')
+        .eq('campaign_id', campaignId);
+      if (error) throw error;
+      setAssets(data || []);
+    } catch (error: any) {
+      console.error('Error fetching assets:', error.message);
+    }
+  };
+
+  useEffect(() => {
+    fetchCampaigns();
+  }, [user]);
+
+  useEffect(() => {
+    if (selectedCampaign) {
+      fetchAssets(selectedCampaign.id);
+    }
+  }, [selectedCampaign]);
+
+  const handleCreateCampaign = async () => {
+    const name = prompt('Nombre de la campaña:');
+    if (!name) return;
+    try {
+      const { data, error } = await supabase.from('campaigns').insert([
+        { user_id: user?.id, name, status: 'active' }
+      ]).select();
+      if (error) throw error;
+      if (data) {
+        setCampaigns([data[0], ...campaigns]);
+        setSelectedCampaign(data[0]);
+      }
+    } catch (error: any) {
+      alert('Error: ' + error.message);
+    }
+  };
+
   return (
-    <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-700">
-      <div className="flex items-center justify-between">
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+    >
+      <div className="mb-12 flex justify-between items-end">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Campaigns</h1>
-          <p className="mt-2 text-slate-400">Manage and monitor your marketing campaigns across platforms.</p>
+          <div className="flex items-center gap-2 text-slate-400 text-xs font-bold tracking-widest uppercase mb-2">
+            <span>Espacio de Trabajo</span>
+            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+            <span className="text-primary">Campañas</span>
+          </div>
+          <h2 className="text-4xl font-extrabold tracking-tight text-on-surface font-headline">
+            {selectedCampaign?.name || 'Mis Campañas'}
+          </h2>
+          <p className="text-slate-500 mt-2 font-medium">Gestiona tus campañas de marketing multicanal.</p>
         </div>
-        <button className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-3 rounded-xl font-semibold hover:from-blue-500 hover:to-indigo-500 transition-all shadow-lg shadow-blue-500/25 active:scale-95">
-          <Plus size={20} />
-          Create Campaign
-        </button>
+        <div className="flex gap-3">
+          <button 
+            onClick={handleCreateCampaign}
+            className="px-5 py-2.5 bg-primary text-white font-semibold rounded-full hover:translate-y-[-1px] transition-all flex items-center gap-2"
+          >
+            <span className="material-symbols-outlined text-[18px]">add</span>
+            <span>Nueva Campaña</span>
+          </button>
+        </div>
       </div>
 
-      <div className="flex items-center gap-4 p-4 bg-slate-900/50 border border-slate-800 rounded-2xl">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
-          <input 
-            type="text" 
-            placeholder="Search campaigns..." 
-            className="w-full bg-slate-800 border-none rounded-xl py-2.5 pl-11 text-sm text-white focus:ring-2 focus:ring-blue-500/50 outline-none"
-          />
-        </div>
-        <button className="flex items-center gap-2 px-6 py-2.5 bg-slate-800 text-slate-300 rounded-xl hover:text-white transition-all border border-slate-700">
-          <Filter size={18} />
-          Filter
-        </button>
-      </div>
-
-      <div className="glass-panel rounded-2xl overflow-hidden">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="border-b border-slate-800 bg-slate-800/20">
-              <th className="px-8 py-5 text-sm font-bold text-slate-500 uppercase tracking-widest">Campaign Name</th>
-              <th className="px-8 py-5 text-sm font-bold text-slate-500 uppercase tracking-widest">Status</th>
-              <th className="px-8 py-5 text-sm font-bold text-slate-500 uppercase tracking-widest">Est. Reach</th>
-              <th className="px-8 py-5 text-sm font-bold text-slate-500 uppercase tracking-widest">Budget</th>
-              <th className="px-8 py-5 text-sm font-bold text-slate-500 uppercase tracking-widest">Performance</th>
-              <th className="px-8 py-5 text-sm font-bold text-slate-500 uppercase tracking-widest text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-800">
-            {campaigns.map((campaign) => (
-              <tr key={campaign.id} className="group hover:bg-slate-800/30 transition-colors">
-                <td className="px-8 py-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center text-slate-500 group-hover:text-blue-500 transition-colors">
-                      <Megaphone size={20} />
-                    </div>
-                    <span className="font-semibold text-slate-200">{campaign.name}</span>
-                  </div>
-                </td>
-                <td className="px-8 py-6">
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
-                    campaign.status === 'Running' ? 'bg-emerald-500/10 text-emerald-500' :
-                    campaign.status === 'Draft' ? 'bg-slate-500/10 text-slate-400' :
-                    'bg-blue-500/10 text-blue-500'
-                  }`}>
-                    {campaign.status}
-                  </span>
-                </td>
-                <td className="px-8 py-6 text-slate-400 text-sm font-medium">{campaign.reach}</td>
-                <td className="px-8 py-6 text-slate-400 text-sm font-medium">{campaign.budget}</td>
-                <td className="px-8 py-6">
-                  <div className="flex items-center gap-2">
-                    {campaign.performance === 'up' ? (
-                      <ArrowUpRight className="text-emerald-500" size={16} />
-                    ) : (
-                      <TrendingUp className="text-slate-500 rotate-90" size={16} />
-                    )}
-                    <span className={campaign.performance === 'up' ? 'text-emerald-500' : 'text-slate-400'}>
-                      {campaign.engagement}
-                    </span>
-                  </div>
-                </td>
-                <td className="px-8 py-6 text-right">
-                  <button className="p-2 text-slate-500 hover:text-white transition-colors">
-                    <BarChart2 size={20} />
-                  </button>
-                </td>
-              </tr>
+      <div className="grid grid-cols-12 gap-10">
+        <div className="col-span-3 space-y-6">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 px-2">Campañas</h3>
+          <div className="space-y-3">
+            {campaigns.map((c) => (
+              <div 
+                key={c.id}
+                onClick={() => setSelectedCampaign(c)}
+                className={`p-5 rounded-xl shadow-sm ghost-border cursor-pointer transition-all flex items-start gap-4 ${
+                  selectedCampaign?.id === c.id ? 'bg-surface-container-lowest ring-2 ring-primary/10' : 'bg-surface-container-low hover:bg-surface-container'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                  selectedCampaign?.id === c.id ? 'bg-primary-fixed text-primary' : 'bg-slate-200 text-slate-400'
+                }`}>
+                  <span className="material-symbols-outlined" style={{ fontVariationSettings: selectedCampaign?.id === c.id ? "'FILL' 1" : "" }}>folder</span>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <p className="font-bold text-sm truncate">{c.name}</p>
+                  <p className="text-xs text-slate-500 capitalize">{c.status}</p>
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        </div>
+
+        <div className="col-span-9 space-y-8">
+          <div className="bg-surface-container-lowest rounded-2xl shadow-sm ghost-border overflow-hidden min-h-[400px]">
+            <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-primary flex items-center gap-2">
+                <span className="material-symbols-outlined text-[20px]">grid_view</span>
+                Recursos del Proyecto
+              </h3>
+            </div>
+
+            <div className="p-8 grid grid-cols-4 gap-6">
+              {assets.length === 0 ? (
+                <div className="col-span-full py-20 text-center text-slate-400 italic">
+                  No hay recursos asignados a esta campaña.
+                </div>
+              ) : (
+                assets.map((asset) => (
+                  <div key={asset.id} className="group relative aspect-square rounded-xl overflow-hidden bg-slate-100">
+                     <AssetPreview path={asset.image_path} />
+                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-4 flex flex-col justify-end text-white">
+                       <p className="text-[10px] font-medium truncate">{asset.caption}</p>
+                     </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
-function TrendingUp(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
-      <polyline points="16 7 22 7 22 13" />
-    </svg>
-  );
+function AssetPreview({ path }: { path: string }) {
+  const [url, setUrl] = useState<string>('');
+  useEffect(() => {
+    let objectUrl: string;
+    const fetch = async () => {
+      const { data } = await supabase.storage.from('posts').download(path);
+      if (data) {
+        objectUrl = URL.createObjectURL(data);
+        setUrl(objectUrl);
+      }
+    };
+    fetch();
+    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [path]);
+
+  if (!url) return <div className="w-full h-full animate-pulse bg-slate-200" />;
+  return <img src={url} alt="Resource" className="w-full h-full object-cover" />;
 }

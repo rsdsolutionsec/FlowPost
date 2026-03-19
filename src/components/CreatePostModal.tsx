@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -12,199 +12,277 @@ interface CreatePostModalProps {
 export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [image, setImage] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string>('');
-  const [caption, setCaption] = useState('');
-  const [scheduledAt, setScheduledAt] = useState('');
-  const [platform, setPlatform] = useState('facebook');
-  
-  // New: Copy Management
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [pages, setPages] = useState<any[]>([]);
+  const [campaigns, setCampaigns] = useState<any[]>([]);
   const [copies, setCopies] = useState<any[]>([]);
+  const [selectedPageId, setSelectedPageId] = useState<string>('');
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const [selectedCopyId, setSelectedCopyId] = useState<string>('');
-  const [useCustomCaption, setUseCustomCaption] = useState(true);
+  const [useReusableCopy, setUseReusableCopy] = useState(false);
+  const [formData, setFormData] = useState({
+    caption: '',
+    scheduled_at: '',
+    platform: 'facebook',
+  });
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (isOpen && user) {
-      fetchCopies();
-      const now = new Date();
-      now.setMinutes(now.getMinutes() + 30);
-      setScheduledAt(now.toISOString().slice(0, 16));
+      const fetchData = async () => {
+        const [pagesRes, campaignsRes, copiesRes] = await Promise.all([
+          supabase.from('facebook_pages').select('id, page_name').eq('is_active', true).eq('user_id', user.id),
+          supabase.from('campaigns').select('id, name').eq('user_id', user.id),
+          supabase.from('copies').select('id, name').eq('user_id', user.id)
+        ]);
+        
+        if (pagesRes.data) {
+          setPages(pagesRes.data);
+          if (pagesRes.data.length > 0) setSelectedPageId(pagesRes.data[0].id);
+        }
+        if (campaignsRes.data) {
+          setCampaigns(campaignsRes.data);
+        }
+        if (copiesRes.data) {
+          setCopies(copiesRes.data);
+        }
+      };
+      fetchData();
     }
   }, [isOpen, user]);
 
-  const fetchCopies = async () => {
-    const { data } = await supabase
-      .from('copies')
-      .select('id, name, content')
-      .eq('user_id', user?.id)
-      .order('name');
-    setCopies(data || []);
-  };
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setImage(file);
-      setPreview(URL.createObjectURL(file));
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setImageFile(e.target.files[0]);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !image || (!useCustomCaption && !selectedCopyId)) return;
+    if (!user || !imageFile || !selectedPageId) {
+      alert('Por favor selecciona una imagen y una página de destino');
+      return;
+    }
+
+    if (!useReusableCopy && !formData.caption) {
+      alert('Por favor escribe un caption o selecciona un copy reutilizable');
+      return;
+    }
+
+    if (useReusableCopy && !selectedCopyId) {
+      alert('Por favor selecciona un copy de tu librería');
+      return;
+    }
 
     setLoading(true);
     try {
-      // 1. Subir Imagen
-      const fileExt = image.name.split('.').pop();
-      const fileName = `${user.id}/${Math.random()}.${fileExt}`;
+      // 1. Subir archivo a Supabase Storage
+      const fileExt = imageFile.name.split('.').pop();
+      const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
+      const filePath = `${user.id}/${fileName}`;
+
       const { error: uploadError } = await supabase.storage
         .from('posts')
-        .upload(fileName, image);
+        .upload(filePath, imageFile);
 
       if (uploadError) throw uploadError;
 
-      // 2. Crear Post en DB
-      const { error: dbError } = await supabase.from('posts').insert([
+      // 2. Insertar en la tabla posts
+      const { error } = await supabase.from('posts').insert([
         {
           user_id: user.id,
-          image_path: fileName,
-          custom_caption: useCustomCaption ? caption : null,
-          copy_id: useCustomCaption ? null : selectedCopyId,
-          scheduled_at: new Date(scheduledAt).toISOString(),
+          facebook_page_id: selectedPageId,
+          campaign_id: selectedCampaignId || null,
+          copy_id: useReusableCopy ? selectedCopyId : null,
+          custom_caption: useReusableCopy ? null : formData.caption,
+          caption: useReusableCopy ? null : formData.caption, // Fallback for legacy
+          image_path: filePath,
+          scheduled_at: new Date(formData.scheduled_at).toISOString(),
+          platform: formData.platform,
           status: 'scheduled',
-          platform
-        }
+        },
       ]);
 
-      if (dbError) throw dbError;
-
+      if (error) throw error;
+      
       onSuccess();
       onClose();
-      resetForm();
+      setFormData({ caption: '', scheduled_at: '', platform: 'facebook' });
+      setImageFile(null);
+      setSelectedCopyId('');
+      setUseReusableCopy(false);
     } catch (error: any) {
-      alert('Error: ' + error.message);
+      alert('Error al crear el post: ' + error.message);
     } finally {
       setLoading(false);
     }
-  };
-
-  const resetForm = () => {
-    setImage(null);
-    setPreview('');
-    setCaption('');
-    setUseCustomCaption(true);
-    setSelectedCopyId('');
   };
 
   return (
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             onClick={onClose}
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
           />
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="relative w-full max-w-4xl bg-white rounded-[2.5rem] overflow-hidden shadow-2xl flex h-[80vh]"
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            className="relative w-full max-w-lg bg-surface-container-lowest rounded-[2.5rem] shadow-2xl overflow-hidden ghost-border"
           >
-            {/* Left: Preview & Upload */}
-            <div className={`w-1/2 bg-slate-50 relative flex flex-col items-center justify-center p-10 border-r border-slate-100`}>
-              {preview ? (
-                <div className="w-full h-full rounded-2xl overflow-hidden shadow-lg bg-white p-2">
-                  <img src={preview} alt="Preview" className="w-full h-full object-cover rounded-xl" />
-                  <button onClick={() => {setImage(null); setPreview('');}} className="absolute top-12 right-12 w-10 h-10 bg-white/90 backdrop-blur rounded-full shadow-lg flex items-center justify-center text-rose-500 hover:bg-white transition-all">
-                    <span className="material-symbols-outlined">close</span>
-                  </button>
-                </div>
-              ) : (
-                <label className="w-full h-full border-4 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center cursor-pointer hover:border-primary/30 hover:bg-slate-100/50 transition-all group">
-                  <input type="file" accept="image/*" onChange={handleImageChange} className="hidden" />
-                  <div className="w-20 h-20 bg-white rounded-3xl shadow-sm flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                    <span className="material-symbols-outlined text-4xl text-slate-300">add_photo_alternate</span>
-                  </div>
-                  <p className="font-black text-slate-400 uppercase tracking-widest text-xs">Subir Imagen</p>
-                </label>
-              )}
-            </div>
-
-            {/* Right: Details */}
-            <div className="w-1/2 p-10 flex flex-col">
-              <div className="mb-8">
-                 <h2 className="text-2xl font-black text-slate-900 font-headline">Nueva Publicación</h2>
-                 <p className="text-slate-400 text-sm font-medium">Configura los detalles de tu post.</p>
+            <div className="p-8 space-y-6 overflow-y-auto max-h-[90vh]">
+              <div className="flex justify-between items-center">
+                <h3 className="text-2xl font-extrabold text-on-surface font-headline">Crear Nueva Publicación</h3>
+                <button onClick={onClose} className="p-2 hover:bg-surface-container-low rounded-full transition-colors">
+                  <span className="material-symbols-outlined">close</span>
+                </button>
               </div>
 
-              <form onSubmit={handleSubmit} className="flex-1 flex flex-col gap-6 overflow-y-auto pr-2 custom-scrollbar">
-                
-                {/* Platform Toggle */}
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => setPlatform('facebook')} className={`flex-1 py-3 rounded-2xl flex items-center justify-center gap-2 border-2 transition-all font-black text-xs uppercase tracking-widest ${platform === 'facebook' ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200' : 'border-slate-100 text-slate-400'}`}>
-                    <span className="material-symbols-outlined text-[18px]">thumb_up</span>
-                    Facebook
-                  </button>
-                  <button type="button" onClick={() => setPlatform('instagram')} className={`flex-1 py-3 rounded-2xl flex items-center justify-center gap-2 border-2 transition-all font-black text-xs uppercase tracking-widest ${platform === 'instagram' ? 'bg-gradient-to-tr from-amber-400 via-rose-500 to-purple-600 border-rose-500 text-white shadow-lg shadow-rose-200' : 'border-slate-100 text-slate-400'}`}>
-                    <span className="material-symbols-outlined text-[18px]">photo_camera</span>
-                    Instagram
-                  </button>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Publicar en Página</label>
+                    {pages.length > 0 ? (
+                      <select
+                        required
+                        value={selectedPageId}
+                        onChange={(e) => setSelectedPageId(e.target.value)}
+                        className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm font-bold"
+                      >
+                        {pages.map(page => (
+                          <option key={page.id} value={page.id}>{page.page_name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl text-xs font-bold border border-rose-100 flex items-center gap-2">
+                        <span className="material-symbols-outlined text-sm">warning</span>
+                        <span>No hay páginas conectadas.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Campaña (Op)</label>
+                    <select
+                      value={selectedCampaignId}
+                      onChange={(e) => setSelectedCampaignId(e.target.value)}
+                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm font-bold"
+                    >
+                      <option value="">Sin Campaña</option>
+                      {campaigns.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
-                {/* Caption Selection */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between px-1">
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Contenido del Post</label>
-                    <button type="button" onClick={() => setUseCustomCaption(!useCustomCaption)} className="text-[10px] font-black uppercase text-primary hover:underline">
-                      {useCustomCaption ? 'Usar Copy Guardado' : 'Escribir Manualmente'}
-                    </button>
-                  </div>
-                  
-                  {useCustomCaption ? (
-                    <textarea 
-                      required value={caption} onChange={(e) => setCaption(e.target.value)}
-                      placeholder="Escribe algo increíble..." 
-                      className="w-full p-5 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary/20 min-h-[120px] text-sm resize-none font-medium"
-                    />
-                  ) : (
-                    <div className="space-y-4">
-                      <select 
-                        required value={selectedCopyId} onChange={(e) => setSelectedCopyId(e.target.value)}
-                        className="w-full p-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-sm font-black"
+                <div className="space-y-3 p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Contenido del Post</label>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[9px] font-black uppercase tracking-widest ${!useReusableCopy ? 'text-primary' : 'text-slate-300'}`}>Manual</span>
+                      <button 
+                        type="button"
+                        onClick={() => setUseReusableCopy(!useReusableCopy)}
+                        className={`w-10 h-5 rounded-full transition-colors relative ${useReusableCopy ? 'bg-primary' : 'bg-slate-300'}`}
                       >
-                        <option value="">Selecciona un copy...</option>
-                        {copies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${useReusableCopy ? 'left-6' : 'left-1'}`}></div>
+                      </button>
+                      <span className={`text-[9px] font-black uppercase tracking-widest ${useReusableCopy ? 'text-primary' : 'text-slate-300'}`}>Reusable</span>
+                    </div>
+                  </div>
+
+                  {useReusableCopy ? (
+                    <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
+                      <select
+                        required
+                        value={selectedCopyId}
+                        onChange={(e) => setSelectedCopyId(e.target.value)}
+                        className="w-full p-4 bg-white rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm font-bold shadow-sm"
+                      >
+                        <option value="">Selecciona un copy guardado...</option>
+                        {copies.map(copy => (
+                          <option key={copy.id} value={copy.id}>{copy.name}</option>
+                        ))}
                       </select>
-                      {selectedCopyId && (
-                        <div className="p-4 bg-indigo-50/50 rounded-xl border border-indigo-100/50">
-                          <p className="text-xs text-indigo-900 line-clamp-3 italic opacity-70">
-                            "{copies.find(c => c.id === selectedCopyId)?.content}"
-                          </p>
-                        </div>
+                      {copies.length === 0 && (
+                        <p className="text-[9px] text-rose-500 font-bold px-2 italic">No tienes copys guardados aún.</p>
                       )}
                     </div>
+                  ) : (
+                    <textarea
+                      required
+                      value={formData.caption}
+                      onChange={(e) => setFormData({ ...formData, caption: e.target.value })}
+                      className="w-full p-4 bg-white rounded-2xl border-none focus:ring-2 focus:ring-primary/20 min-h-[100px] text-on-surface text-sm font-medium shadow-sm leading-relaxed animate-in fade-in slide-in-from-top-1 duration-300"
+                      placeholder="Escribe algo increíble para tu audiencia..."
+                    />
                   )}
                 </div>
 
-                {/* Schedule */}
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-slate-400 px-1 tracking-widest">Programar Para</label>
-                  <input 
-                    required type="datetime-local" 
-                    value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)}
-                    className="w-full p-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-sm font-black"
-                  />
+                  <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Imagen (Archivo)</label>
+                  <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full p-6 bg-surface-container-low rounded-2xl border-2 border-dashed border-primary/10 hover:border-primary/30 transition-all cursor-pointer flex flex-col items-center justify-center gap-1 group"
+                  >
+                    <span className="material-symbols-outlined text-3xl text-primary/40 group-hover:scale-110 transition-transform">
+                      {imageFile ? 'check_circle' : 'cloud_upload'}
+                    </span>
+                    <span className="text-on-surface-variant font-black text-[10px] text-center truncate w-full px-4">
+                      {imageFile ? imageFile.name : 'Subir Imagen'}
+                    </span>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      className="hidden"
+                      accept="image/*"
+                    />
+                  </div>
                 </div>
 
-                <div className="mt-auto pt-6 flex gap-3">
-                  <button type="button" onClick={onClose} className="px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-colors">Cancelar</button>
-                  <button type="submit" disabled={loading} className="flex-1 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 disabled:opacity-50 flex items-center justify-center gap-2">
-                    {loading ? 'Programando...' : (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Programar</label>
+                    <input
+                      type="datetime-local"
+                      required
+                      value={formData.scheduled_at}
+                      onChange={(e) => setFormData({ ...formData, scheduled_at: e.target.value })}
+                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-xs font-bold"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Red</label>
+                    <select
+                      value={formData.platform}
+                      onChange={(e) => setFormData({ ...formData, platform: e.target.value })}
+                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-xs font-bold"
+                    >
+                      <option value="facebook">Facebook</option>
+                      <option value="instagram">Instagram</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="pt-4">
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-4 bg-primary text-white font-black text-sm uppercase tracking-widest rounded-2xl hover:translate-y-[-2px] hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {loading ? (
+                      'Procesando...'
+                    ) : (
                       <>
-                        <span className="material-symbols-outlined text-[18px]">calendar_today</span>
-                        Programar Post
+                        <span className="material-symbols-outlined text-sm">rocket_launch</span>
+                        <span>Programar Post</span>
                       </>
                     )}
                   </button>

@@ -121,6 +121,9 @@ export default function CopyLibrary() {
           mediaUrl: scheduleFromCopy.media_path && scheduleFromCopy.media_path.startsWith('http') 
             ? scheduleFromCopy.media_path 
             : undefined,
+          mediaPath: scheduleFromCopy.media_path && !scheduleFromCopy.media_path.startsWith('http')
+            ? scheduleFromCopy.media_path
+            : undefined,
           mediaFileName: scheduleFromCopy.media_path ? scheduleFromCopy.media_path.split('/').pop() : undefined
         } : undefined}
       />

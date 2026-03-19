@@ -69,7 +69,7 @@ export default function Dashboard() {
           to="/scheduled" 
           className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:scale-105 transition-transform shadow-xl shadow-indigo-600/20 active:scale-95 text-center"
         >
-          Crear Publicacin
+          Crear Publicación
         </Link>
       </section>
 
@@ -103,35 +103,35 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
         <div className="lg:col-span-2">
           <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100 h-full">
-             <h3 className="text-2xl font-black text-slate-900 mb-8 font-headline">Lo ltimo</h3>
+             <h3 className="text-2xl font-black text-slate-900 mb-8 font-headline">Lo último</h3>
              <div className="space-y-6">
-                {recentPosts.length === 0 ? (
-                  <div className="py-12 text-center space-y-4">
-                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto">
-                      <span className="material-symbols-outlined text-slate-300 text-3xl">post_add</span>
-                    </div>
-                    <p className="text-slate-400 font-medium italic">An no hay publicaciones recientes.</p>
-                  </div>
-                ) : (
-                  recentPosts.map(post => (
-                    <div key={post.id} className="flex items-center gap-6 p-2 group">
-                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${
-                        post.status === 'published' ? 'bg-emerald-50 text-emerald-600' : 
-                        post.status === 'failed' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'
-                      }`}>
-                        <span className="material-symbols-outlined text-2xl">
-                          {post.status === 'published' ? 'check_circle' : post.status === 'failed' ? 'error' : 'schedule'}
-                        </span>
+               {recentPosts.length === 0 ? (
+                 <div className="py-12 text-center space-y-4">
+                   <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto">
+                     <span className="material-symbols-outlined text-slate-300 text-3xl">post_add</span>
+                   </div>
+                   <p className="text-slate-400 font-medium italic">Aún no hay publicaciones recientes.</p>
+                 </div>
+               ) : (
+                 recentPosts.map(post => (
+                   <div key={post.id} className="flex items-center gap-6 p-2 group">
+                     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${
+                       post.status === 'published' ? 'bg-emerald-50 text-emerald-600' : 
+                       post.status === 'failed' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'
+                     }`}>
+                       <span className="material-symbols-outlined text-2xl">
+                         {post.status === 'published' ? 'check_circle' : post.status === 'failed' ? 'error' : 'schedule'}
+                       </span>
+                     </div>
+                      <div className="flex-1 truncate">
+                        <p className="font-black text-slate-900 truncate">
+                          {post.copies ? `Copy: ${post.copies.name}` : (post.custom_caption || post.caption || 'Sin título')}
+                        </p>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{post.status}</p>
                       </div>
-                       <div className="flex-1 truncate">
-                         <p className="font-black text-slate-900 truncate">
-                           {post.copies ? `Copy: ${post.copies.name}` : (post.custom_caption || post.caption || 'Sin ttulo')}
-                         </p>
-                         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{post.status}</p>
-                       </div>
-                    </div>
-                  ))
-                )}
+                   </div>
+                 ))
+               )}
              </div>
           </div>
         </div>

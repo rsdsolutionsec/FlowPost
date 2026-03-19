@@ -7,6 +7,7 @@ const mainItems = [
   { icon: 'calendar_month', label: 'Programados', path: '/scheduled' },
   { icon: 'photo_library', label: 'Biblioteca', path: '/media' },
   { icon: 'content_copy', label: 'Librería de Copys', path: '/copies' },
+  { icon: 'playlist_add_check', label: 'Asignar Copys', path: '/assign-copies' },
   { icon: 'campaign', label: 'Campañas', path: '/campaigns' },
 ];
 

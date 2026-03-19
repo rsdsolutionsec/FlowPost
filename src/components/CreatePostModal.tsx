@@ -64,10 +64,11 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
       return;
     }
 
-    if (!useReusableCopy && !formData.caption) {
-      alert('Por favor escribe un caption o selecciona un copy reutilizable');
-      return;
-    }
+    // Now allowing empty captions to be assigned later via the Bulk Assign Copies system
+    // if (!useReusableCopy && !formData.caption) {
+    //   alert('Por favor escribe un caption o selecciona un copy reutilizable');
+    //   return;
+    // }
 
     if (useReusableCopy && !selectedCopyId) {
       alert('Por favor selecciona un copy de tu librería');
@@ -76,7 +77,6 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
 
     setLoading(true);
     try {
-      // 1. Subir archivo a Supabase Storage
       const fileExt = imageFile.name.split('.').pop();
       const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `${user.id}/${fileName}`;
@@ -87,7 +87,6 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
 
       if (uploadError) throw uploadError;
 
-      // 2. Insertar en la tabla posts
       const { error } = await supabase.from('posts').insert([
         {
           user_id: user.id,
@@ -95,7 +94,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
           campaign_id: selectedCampaignId || null,
           copy_id: useReusableCopy ? selectedCopyId : null,
           custom_caption: useReusableCopy ? null : formData.caption,
-          caption: useReusableCopy ? null : formData.caption, // Fallback for legacy
+          caption: useReusableCopy ? null : formData.caption,
           image_path: filePath,
           scheduled_at: new Date(formData.scheduled_at).toISOString(),
           platform: formData.platform,
@@ -216,11 +215,10 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
                     </div>
                   ) : (
                     <textarea
-                      required
                       value={formData.caption}
                       onChange={(e) => setFormData({ ...formData, caption: e.target.value })}
                       className="w-full p-4 bg-white rounded-2xl border-none focus:ring-2 focus:ring-primary/20 min-h-[100px] text-on-surface text-sm font-medium shadow-sm leading-relaxed animate-in fade-in slide-in-from-top-1 duration-300"
-                      placeholder="Escribe algo increíble para tu audiencia..."
+                      placeholder="Escribe un caption o déjalo vacío para asignar después..."
                     />
                   )}
                 </div>

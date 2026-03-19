@@ -10,6 +10,7 @@ import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import Accounts from './pages/Accounts';
 import CopyLibrary from './pages/CopyLibrary';
+import AssignCopies from './pages/AssignCopies';
 import Auth from './pages/Auth';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
@@ -48,6 +49,7 @@ export default function App() {
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/accounts" element={<Accounts />} />
             <Route path="/copies" element={<CopyLibrary />} />
+            <Route path="/assign-copies" element={<AssignCopies />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
 

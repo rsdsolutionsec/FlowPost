@@ -155,6 +155,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
           .select('*')
           .eq('user_id', user.id)
           .eq('path', folderIdentifier)
+          .order('mimetype', { ascending: false }) // Folders first (alphabetically 'folder' > 'image/...') - wait, 'f' < 'i'. Let's just sort.
           .order('created_at', { ascending: false });
         
         if (!error && data) {
@@ -172,13 +173,12 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
   };
 
   const handleItemClick = (item: any) => {
-    if (!item.id) {
+    if (item.mimetype === 'folder') {
        // Is a folder
        setMediaCurrentFolder(mediaCurrentFolder ? `${mediaCurrentFolder}/${item.name}` : item.name);
     } else {
-       // Is a file
-       const fullPath = mediaCurrentFolder ? `${mediaCurrentFolder}/${item.name}` : item.name;
-       setSelectedLibraryFile(fullPath);
+       // Is a file - Use the public URL directly
+       setSelectedLibraryFile(item.url);
     }
   };
 
@@ -473,9 +473,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
                                   path={file.url} 
                                   fileName={file.name} 
                                   selected={selectedLibraryFile === file.url}
-                                  onClick={() => {
-                                    setSelectedLibraryFile(file.url);
-                                  }}
+                                  onClick={() => handleItemClick(file)}
                                 />
                                );
                             })}

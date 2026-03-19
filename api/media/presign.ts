@@ -54,12 +54,18 @@ export default async function handler(req: any, res: any) {
         accessKeyId: accessKeyId,
         secretAccessKey: secretAccessKey,
       },
+      // IMPORTANT: Cloudflare R2 + Preflight often fails if checksums are injected by the SDK.
+      // We disable them here to keep the request simple.
+      requestChecksumCalculation: "WHEN_REQUIRED",
+      responseChecksumValidation: "WHEN_REQUIRED",
     });
 
     const command = new PutObjectCommand({
       Bucket: bucketName,
       Key: filename,
       ContentType: contentType,
+      // Also explicitly disable for this command
+      ChecksumAlgorithm: undefined,
     });
 
     const signedUrl = await getSignedUrl(S3, command, { expiresIn: 3600 });

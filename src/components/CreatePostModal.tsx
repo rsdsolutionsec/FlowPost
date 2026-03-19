@@ -13,7 +13,13 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Media State
+  const [imageSource, setImageSource] = useState<'upload' | 'library'>('upload');
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [libraryFiles, setLibraryFiles] = useState<any[]>([]);
+  const [selectedLibraryFile, setSelectedLibraryFile] = useState<string>('');
+
   const [pages, setPages] = useState<any[]>([]);
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [copies, setCopies] = useState<any[]>([]);
@@ -30,10 +36,11 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
   React.useEffect(() => {
     if (isOpen && user) {
       const fetchData = async () => {
-        const [pagesRes, campaignsRes, copiesRes] = await Promise.all([
+        const [pagesRes, campaignsRes, copiesRes, mediaRes] = await Promise.all([
           supabase.from('facebook_pages').select('id, page_name').eq('is_active', true).eq('user_id', user.id),
           supabase.from('campaigns').select('id, name').eq('user_id', user.id),
-          supabase.from('copies').select('id, name').eq('user_id', user.id)
+          supabase.from('copies').select('id, name').eq('user_id', user.id),
+          supabase.storage.from('posts').list(user.id, { limit: 50, sortBy: { column: 'created_at', order: 'desc' } })
         ]);
         
         if (pagesRes.data) {
@@ -46,6 +53,9 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
         if (copiesRes.data) {
           setCopies(copiesRes.data);
         }
+        if (mediaRes.data) {
+          setLibraryFiles(mediaRes.data.filter(f => f.name !== '.emptyFolderPlaceholder'));
+        }
       };
       fetchData();
     }
@@ -57,18 +67,20 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
     }
   };
 
+  const getImageUrl = (fileName: string) => {
+    if (!user) return '';
+    const { data } = supabase.storage.from('posts').getPublicUrl(`${user.id}/${fileName}`);
+    return data.publicUrl;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !imageFile || !selectedPageId) {
+    
+    const isValidMedia = (imageSource === 'upload' && imageFile) || (imageSource === 'library' && selectedLibraryFile);
+    if (!user || !isValidMedia || !selectedPageId) {
       alert('Por favor selecciona una imagen y una página de destino');
       return;
     }
-
-    // Now allowing empty captions to be assigned later via the Bulk Assign Copies system
-    // if (!useReusableCopy && !formData.caption) {
-    //   alert('Por favor escribe un caption o selecciona un copy reutilizable');
-    //   return;
-    // }
 
     if (useReusableCopy && !selectedCopyId) {
       alert('Por favor selecciona un copy de tu librería');
@@ -77,16 +89,25 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
 
     setLoading(true);
     try {
-      const fileExt = imageFile.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
-      const filePath = `${user.id}/${fileName}`;
+      let filePath = '';
 
-      const { error: uploadError } = await supabase.storage
-        .from('posts')
-        .upload(filePath, imageFile);
+      if (imageSource === 'upload' && imageFile) {
+        // 1. Subir archivo a Supabase Storage
+        const fileExt = imageFile.name.split('.').pop();
+        const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
+        filePath = `${user.id}/${fileName}`;
 
-      if (uploadError) throw uploadError;
+        const { error: uploadError } = await supabase.storage
+          .from('posts')
+          .upload(filePath, imageFile);
 
+        if (uploadError) throw uploadError;
+      } else {
+        // Usar archivo existente de la biblioteca
+        filePath = `${user.id}/${selectedLibraryFile}`;
+      }
+
+      // 2. Insertar en la tabla posts
       const { error } = await supabase.from('posts').insert([
         {
           user_id: user.id,
@@ -94,7 +115,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
           campaign_id: selectedCampaignId || null,
           copy_id: useReusableCopy ? selectedCopyId : null,
           custom_caption: useReusableCopy ? null : formData.caption,
-          caption: useReusableCopy ? null : formData.caption,
+          caption: useReusableCopy ? null : formData.caption, // Fallback for legacy
           image_path: filePath,
           scheduled_at: new Date(formData.scheduled_at).toISOString(),
           platform: formData.platform,
@@ -106,10 +127,15 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
       
       onSuccess();
       onClose();
+      
+      // Reset state
       setFormData({ caption: '', scheduled_at: '', platform: 'facebook' });
       setImageFile(null);
       setSelectedCopyId('');
       setUseReusableCopy(false);
+      setImageSource('upload');
+      setSelectedLibraryFile('');
+      
     } catch (error: any) {
       alert('Error al crear el post: ' + error.message);
     } finally {
@@ -120,7 +146,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -132,9 +158,9 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-lg bg-surface-container-lowest rounded-[2.5rem] shadow-2xl overflow-hidden ghost-border"
+            className="relative w-full max-w-lg bg-surface-container-lowest rounded-[2.5rem] shadow-2xl overflow-hidden ghost-border flex flex-col max-h-[90vh]"
           >
-            <div className="p-8 space-y-6 overflow-y-auto max-h-[90vh]">
+            <div className="p-8 space-y-6 overflow-y-auto">
               <div className="flex justify-between items-center">
                 <h3 className="text-2xl font-extrabold text-on-surface font-headline">Crear Nueva Publicación</h3>
                 <button onClick={onClose} className="p-2 hover:bg-surface-container-low rounded-full transition-colors">
@@ -142,7 +168,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form id="create-post-form" onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Publicar en Página</label>
@@ -180,6 +206,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
                   </div>
                 </div>
 
+                {/* Caption Section */}
                 <div className="space-y-3 p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
                   <div className="flex items-center justify-between">
                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Contenido del Post</label>
@@ -215,33 +242,87 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
                     </div>
                   ) : (
                     <textarea
+                      required
                       value={formData.caption}
                       onChange={(e) => setFormData({ ...formData, caption: e.target.value })}
                       className="w-full p-4 bg-white rounded-2xl border-none focus:ring-2 focus:ring-primary/20 min-h-[100px] text-on-surface text-sm font-medium shadow-sm leading-relaxed animate-in fade-in slide-in-from-top-1 duration-300"
-                      placeholder="Escribe un caption o déjalo vacío para asignar después..."
+                      placeholder="Escribe algo increíble para tu audiencia..."
                     />
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Imagen (Archivo)</label>
-                  <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full p-6 bg-surface-container-low rounded-2xl border-2 border-dashed border-primary/10 hover:border-primary/30 transition-all cursor-pointer flex flex-col items-center justify-center gap-1 group"
-                  >
-                    <span className="material-symbols-outlined text-3xl text-primary/40 group-hover:scale-110 transition-transform">
-                      {imageFile ? 'check_circle' : 'cloud_upload'}
-                    </span>
-                    <span className="text-on-surface-variant font-black text-[10px] text-center truncate w-full px-4">
-                      {imageFile ? imageFile.name : 'Subir Imagen'}
-                    </span>
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleFileChange}
-                      className="hidden"
-                      accept="image/*"
-                    />
+                {/* Media Section */}
+                <div className="space-y-3 p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Contenido Visual</label>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[9px] font-black uppercase tracking-widest ${imageSource === 'upload' ? 'text-primary' : 'text-slate-300'}`}>Subir PC</span>
+                      <button 
+                        type="button"
+                        onClick={() => setImageSource(imageSource === 'upload' ? 'library' : 'upload')}
+                        className={`w-10 h-5 rounded-full transition-colors relative ${imageSource === 'library' ? 'bg-primary' : 'bg-slate-300'}`}
+                      >
+                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${imageSource === 'library' ? 'left-6' : 'left-1'}`}></div>
+                      </button>
+                      <span className={`text-[9px] font-black uppercase tracking-widest ${imageSource === 'library' ? 'text-primary' : 'text-slate-300'}`}>Biblioteca</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-2 min-h-[100px] flex flex-col justify-center animate-in fade-in slide-in-from-top-1 duration-300">
+                    {imageSource === 'upload' ? (
+                      <div 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full p-6 bg-white rounded-2xl border-2 border-dashed border-primary/10 hover:border-primary/30 transition-all cursor-pointer flex flex-col items-center justify-center gap-2 group shadow-sm"
+                      >
+                        <span className="material-symbols-outlined text-3xl text-primary/40 group-hover:scale-110 transition-transform">
+                          {imageFile ? 'check_circle' : 'cloud_upload'}
+                        </span>
+                        <span className="text-on-surface-variant font-black text-xs text-center truncate w-full px-4">
+                          {imageFile ? imageFile.name : 'Haz click para subir archivo'}
+                        </span>
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={handleFileChange}
+                          className="hidden"
+                          accept="image/*,video/*"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-full">
+                        {libraryFiles.length > 0 ? (
+                          <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar snap-x">
+                            {libraryFiles.map(file => (
+                              <div 
+                                key={file.id}
+                                onClick={() => setSelectedLibraryFile(file.name)}
+                                className="relative flex-none w-24 h-24 snap-start cursor-pointer rounded-xl overflow-hidden group"
+                              >
+                                <img 
+                                  src={getImageUrl(file.name)} 
+                                  alt={file.name}
+                                  className={`w-full h-full object-cover border-[3px] rounded-xl transition-all duration-200 ${
+                                    selectedLibraryFile === file.name 
+                                    ? 'border-primary shadow-md scale-95' 
+                                    : 'border-transparent group-hover:border-primary/30 focus:border-primary/30'
+                                  }`}
+                                />
+                                {selectedLibraryFile === file.name && (
+                                  <div className="absolute top-1 right-1 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center shadow-sm">
+                                    <span className="material-symbols-outlined text-[12px] font-bold">check</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="w-full p-6 bg-white rounded-2xl text-center text-slate-400 border border-slate-100 shadow-sm flex flex-col items-center gap-2">
+                             <span className="material-symbols-outlined opacity-50">photo_library</span>
+                             <p className="text-xs font-bold">No tienes imágenes en tu biblioteca.</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -268,24 +349,25 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
                     </select>
                   </div>
                 </div>
-
-                <div className="pt-4">
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full py-4 bg-primary text-white font-black text-sm uppercase tracking-widest rounded-2xl hover:translate-y-[-2px] hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    {loading ? (
-                      'Procesando...'
-                    ) : (
-                      <>
-                        <span className="material-symbols-outlined text-sm">rocket_launch</span>
-                        <span>Programar Post</span>
-                      </>
-                    )}
-                  </button>
-                </div>
               </form>
+            </div>
+            
+            <div className="p-6 bg-surface-container-low border-t border-slate-100">
+              <button
+                type="submit"
+                form="create-post-form"
+                disabled={loading}
+                className="w-full py-4 bg-primary text-white font-black text-sm uppercase tracking-widest rounded-2xl hover:translate-y-[-2px] hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  'Procesando...'
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-sm">rocket_launch</span>
+                    <span>Programar Post</span>
+                  </>
+                )}
+              </button>
             </div>
           </motion.div>
         </div>

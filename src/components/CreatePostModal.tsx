@@ -9,11 +9,13 @@ interface CreatePostModalProps {
   onSuccess: () => void;
 }
 
-function ImagePreview({ path, fileName, selected, onClick }: { path: string; fileName: string; selected: boolean; onClick: () => void }) {
+function ImagePreview({ path, fileName, selected, onClick, isFolder }: { path: string; fileName: string; selected: boolean; onClick: () => void; isFolder?: boolean }) {
   const [url, setUrl] = useState<string>('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!isFolder);
 
   useEffect(() => {
+    if (isFolder) return;
+    
     let objectUrl: string;
     const loadImg = async () => {
       try {
@@ -33,7 +35,19 @@ function ImagePreview({ path, fileName, selected, onClick }: { path: string; fil
     return () => {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [path]);
+  }, [path, isFolder]);
+
+  if (isFolder) {
+    return (
+      <div 
+        onClick={onClick}
+        className="relative flex-none w-24 h-24 snap-start cursor-pointer rounded-xl overflow-hidden group bg-slate-50 border border-slate-200 flex flex-col items-center justify-center hover:bg-slate-100 hover:border-slate-300 transition-all shadow-sm"
+      >
+        <span className="material-symbols-outlined text-3xl text-blue-400 group-hover:scale-110 transition-transform">folder</span>
+        <span className="text-[10px] font-bold text-slate-600 truncate w-full px-2 text-center mt-1">{fileName}</span>
+      </div>
+    );
+  }
 
   return (
     <div 
@@ -42,7 +56,7 @@ function ImagePreview({ path, fileName, selected, onClick }: { path: string; fil
     >
       {loading ? (
         <div className="w-full h-full bg-slate-100 flex items-center justify-center animate-pulse rounded-xl border-2 border-transparent">
-          <span className="material-symbols-outlined text-slate-300">image</span>
+           <span className="material-symbols-outlined text-slate-300">image</span>
         </div>
       ) : url ? (
         <img 
@@ -77,8 +91,9 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
   // Media State
   const [imageSource, setImageSource] = useState<'upload' | 'library'>('upload');
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [libraryFiles, setLibraryFiles] = useState<any[]>([]);
-  const [selectedLibraryFile, setSelectedLibraryFile] = useState<string>('');
+  const [libraryItems, setLibraryItems] = useState<any[]>([]);
+  const [selectedLibraryFile, setSelectedLibraryFile] = useState<string>(''); // Full path selected
+  const [mediaCurrentFolder, setMediaCurrentFolder] = useState<string>('');
 
   const [pages, setPages] = useState<any[]>([]);
   const [campaigns, setCampaigns] = useState<any[]>([]);
@@ -93,14 +108,14 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
     platform: 'facebook',
   });
 
+  // Fetch initial base data (Pages, Campaigns, Copies, Root Library)
   useEffect(() => {
     if (isOpen && user) {
       const fetchData = async () => {
-        const [pagesRes, campaignsRes, copiesRes, mediaRes] = await Promise.all([
+        const [pagesRes, campaignsRes, copiesRes] = await Promise.all([
           supabase.from('facebook_pages').select('id, page_name').eq('is_active', true).eq('user_id', user.id),
           supabase.from('campaigns').select('id, name').eq('user_id', user.id),
-          supabase.from('copies').select('id, name').eq('user_id', user.id),
-          supabase.storage.from('posts').list(user.id, { limit: 50, sortBy: { column: 'created_at', order: 'desc' } })
+          supabase.from('copies').select('id, name').eq('user_id', user.id)
         ]);
         
         if (pagesRes.data) {
@@ -113,18 +128,51 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
         if (copiesRes.data) {
           setCopies(copiesRes.data);
         }
-        if (mediaRes.data) {
-          setLibraryFiles(mediaRes.data.filter(f => f.name !== '.emptyFolderPlaceholder'));
-        }
       };
       fetchData();
     }
   }, [isOpen, user]);
 
+  // Fetch library items automatically whenever the current folder changes
+  useEffect(() => {
+    if (isOpen && user && imageSource === 'library') {
+      const fetchLibraryMedia = async () => {
+        const folderPath = mediaCurrentFolder ? `${user.id}/${mediaCurrentFolder}` : user.id;
+        const { data, error } = await supabase.storage.from('posts').list(folderPath, {
+          limit: 100,
+          sortBy: { column: 'created_at', order: 'desc' }
+        });
+        
+        if (!error && data) {
+          setLibraryItems(data.filter(f => f.name !== '.emptyFolderPlaceholder'));
+        }
+      };
+      fetchLibraryMedia();
+    }
+  }, [isOpen, user, mediaCurrentFolder, imageSource]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setImageFile(e.target.files[0]);
     }
+  };
+
+  const handleItemClick = (item: any) => {
+    if (!item.id) {
+       // Is a folder
+       setMediaCurrentFolder(mediaCurrentFolder ? `${mediaCurrentFolder}/${item.name}` : item.name);
+    } else {
+       // Is a file
+       const fullPath = mediaCurrentFolder ? `${mediaCurrentFolder}/${item.name}` : item.name;
+       setSelectedLibraryFile(fullPath);
+    }
+  };
+
+  const handleGoBackFolder = () => {
+    if (!mediaCurrentFolder) return;
+    const parts = mediaCurrentFolder.split('/');
+    parts.pop();
+    setMediaCurrentFolder(parts.join('/'));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -189,6 +237,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
       setUseReusableCopy(false);
       setImageSource('upload');
       setSelectedLibraryFile('');
+      setMediaCurrentFolder('');
       
     } catch (error: any) {
       alert('Error al crear el post: ' + error.message);
@@ -196,6 +245,10 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
       setLoading(false);
     }
   };
+
+  // Separar folders de files nativamente para el UI
+  const folders = libraryItems.filter(f => !f.id);
+  const files = libraryItems.filter(f => f.id);
 
   return (
     <AnimatePresence>
@@ -344,22 +397,55 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
                       </div>
                     ) : (
                       <div className="w-full">
-                        {libraryFiles.length > 0 ? (
+                        {mediaCurrentFolder && (
+                          <div className="flex items-center gap-2 mb-3 text-xs font-bold text-slate-500 px-1">
+                            <span className="material-symbols-outlined text-[14px]">folder_open</span>
+                            <span className="truncate flex-1">{mediaCurrentFolder.split('/').pop()}</span>
+                          </div>
+                        )}
+                        {(folders.length > 0 || files.length > 0 || mediaCurrentFolder) ? (
                           <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar snap-x">
-                            {libraryFiles.map(file => (
+                            {/* Back Button if in subfolder */}
+                            {mediaCurrentFolder && (
+                              <div 
+                                onClick={handleGoBackFolder}
+                                className="relative flex-none w-24 h-24 snap-start cursor-pointer rounded-xl overflow-hidden group bg-white border border-slate-200 flex flex-col items-center justify-center hover:bg-slate-50 transition-all shadow-sm"
+                              >
+                                <span className="material-symbols-outlined text-3xl text-slate-400 group-hover:-translate-y-1 transition-transform">arrow_upward</span>
+                                <span className="text-[10px] font-bold text-slate-500 mt-1">Atrás</span>
+                              </div>
+                            )}
+
+                            {/* Render Folders */}
+                            {folders.map(folder => (
                               <ImagePreview 
-                                key={file.id} 
-                                path={`${user.id}/${file.name}`} 
-                                fileName={file.name} 
-                                selected={selectedLibraryFile === file.name}
-                                onClick={() => setSelectedLibraryFile(file.name)}
+                                key={folder.name}
+                                path=""
+                                fileName={folder.name} 
+                                selected={false}
+                                onClick={() => handleItemClick(folder)}
+                                isFolder={true}
                               />
                             ))}
+
+                            {/* Render Files */}
+                            {files.map(file => {
+                               const fullPath = mediaCurrentFolder ? `${mediaCurrentFolder}/${file.name}` : file.name;
+                               return (
+                                <ImagePreview 
+                                  key={file.id} 
+                                  path={`${user.id}/${fullPath}`} 
+                                  fileName={file.name} 
+                                  selected={selectedLibraryFile === fullPath}
+                                  onClick={() => handleItemClick(file)}
+                                />
+                               );
+                            })}
                           </div>
                         ) : (
                           <div className="w-full p-6 bg-white rounded-2xl text-center text-slate-400 border border-slate-100 shadow-sm flex flex-col items-center gap-2">
                              <span className="material-symbols-outlined opacity-50">photo_library</span>
-                             <p className="text-xs font-bold">No tienes imágenes en tu biblioteca.</p>
+                             <p className="text-xs font-bold">No hay medios aquí.</p>
                           </div>
                         )}
                       </div>

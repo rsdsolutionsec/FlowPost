@@ -1,14 +1,14 @@
 /**
- * Módulo de Facebook para Flowpost
- * Interactúa con la API de Meta Graph para publicar contenido.
+ * Mdulo de Facebook para Flowpost
+ * Interacta con la API de Meta Graph para publicar contenido.
  */
 
 const META_GRAPH_VERSION = 'v19.0';
 /**
- * Publica una foto con una leyenda en una página de Facebook usando contenido binario.
+ * Publica una foto con una leyenda en una pgina de Facebook usando contenido binario.
  * 
  * @param imageContent Buffer o Blob de la imagen a publicar.
- * @param caption Texto que acompañará a la foto.
+ * @param caption Texto que acompaar a la foto.
  * @returns Un objeto con el ID del post o un error.
  */
 export async function publishToFacebook(
@@ -25,6 +25,7 @@ export async function publishToFacebook(
 
   try {
     const formData = new FormData();
+    // Convertimos a Blob si es Buffer, para compatibilidad con Fetch nativo
     const blob = imageContent instanceof Blob ? imageContent : new Blob([imageContent as any]);
     
     formData.append('source', blob);

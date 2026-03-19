@@ -2,17 +2,20 @@ import { supabaseAdmin } from './supabase.js';
 import { publishToFacebook } from './facebook.js';
 
 /**
- * Función principal para procesar posts programados.
+ * Funcin principal para procesar posts programados.
  */
 export async function processScheduledPosts() {
   const now = new Date().toISOString();
-  console.log(`[Scheduler] Iniciando proceso de publicación a las ${now}`);
+  console.log(`[Scheduler] Iniciando proceso de publicacin a las ${now}`);
 
-  // 1. Consultar posts programados con sus respectivas credenciales de página
+  // 1. Consultar posts programados con sus respectivas credenciales de pgina y copias
   const { data: posts, error } = await supabaseAdmin
     .from('posts')
     .select(`
       *,
+      copies (
+        content
+      ),
       facebook_pages (
         page_id,
         page_access_token
@@ -40,7 +43,12 @@ export async function processScheduledPosts() {
     try {
       console.log(`[Scheduler] Procesando post ID: ${post.id}`);
 
-      // 1. Descargar imagen de Supabase Storage
+      // 1. Determinar el contenido (Copy reusable vs Custom Caption vs Legacy Caption)
+      const resolvedCaption = post.copy_id && post.copies
+        ? post.copies.content
+        : (post.custom_caption || post.caption || '');
+
+      // 2. Descargar imagen de Supabase Storage
       if (!post.image_path) {
         throw new Error('El post no tiene una ruta de imagen (image_path)');
       }
@@ -55,17 +63,17 @@ export async function processScheduledPosts() {
         throw new Error(`Error al descargar imagen de Storage: ${downloadError?.message || 'Archivo no encontrado'}`);
       }
 
-      // 2. Resolver credenciales de la página
+      // 3. Resolver credenciales de la pgina
       const pageData = post.facebook_pages;
       if (!pageData || !pageData.page_id || !pageData.page_access_token) {
         throw new Error('No se encontraron credenciales de Facebook para este post (facebook_pages missing)');
       }
 
-      // 3. Publicar en Facebook (pasando el binario y credenciales dinámicas)
+      // 4. Publicar en Facebook (pasando el binario y credenciales dinmicas)
       console.log(`[Scheduler] Enviando binario a Facebook (Page: ${pageData.page_id})...`);
       const result = await publishToFacebook(
         imageData, 
-        post.caption,
+        resolvedCaption,
         pageData.page_id,
         pageData.page_access_token
       );
@@ -88,9 +96,9 @@ export async function processScheduledPosts() {
         }
         
         succeeded++;
-        console.log(`[Scheduler] Post ${post.id} publicado con éxito.`);
+        console.log(`[Scheduler] Post ${post.id} publicado con xito.`);
       } else {
-        // 4. Si falla la publicación, actualizar estado a 'failed'
+        // 4. Si falla la publicacin, actualizar estado a 'failed'
         await supabaseAdmin
           .from('posts')
           .update({ 
@@ -103,7 +111,7 @@ export async function processScheduledPosts() {
           .eq('id', post.id);
         
         failed++;
-        console.error(`[Scheduler] Post ${post.id} falló en Facebook: ${result.error}`);
+        console.error(`[Scheduler] Post ${post.id} fall en Facebook: ${result.error}`);
       }
     } catch (e: any) {
       failed++;
@@ -119,7 +127,7 @@ export async function processScheduledPosts() {
     }
   }
 
-  console.log(`[Scheduler] Finalizado. Éxitos: ${succeeded}, Fallidos: ${failed}`);
+  console.log(`[Scheduler] Finalizado. xitos: ${succeeded}, Fallidos: ${failed}`);
 
   return {
     success: true,

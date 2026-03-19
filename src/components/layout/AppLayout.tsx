@@ -1,17 +1,18 @@
+import React from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 
 export default function AppLayout() {
   return (
-    <div className="min-h-screen bg-surface flex">
+    <div className="min-h-screen bg-surface">
       <Sidebar />
-      <Topbar />
-      <main className="flex-1 ml-[240px] pt-[64px]">
-        <div className="p-8 lg:p-10 max-w-[1400px] mx-auto">
+      <div className="transition-all duration-300 lg:pl-80">
+        <Topbar />
+        <main className="p-4 md:p-8 lg:p-12 max-w-[1600px] mx-auto">
           <Outlet />
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

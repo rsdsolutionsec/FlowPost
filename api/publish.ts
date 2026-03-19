@@ -1,52 +1,27 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { supabaseAdmin } from '../lib/supabase.js';
 import { processScheduledPosts } from '../lib/scheduler.js';
 
-/**
- * Handler de la API /api/publish
- * Dispara el proceso de publicación de posts programados.
- */
-export default async function handler(
-  request: VercelRequest,
-  response: VercelResponse
-) {
-  const now = new Date().toISOString();
-  console.log(`[Cron Job] Execution started at ${now}`);
-
-  // 1. Validate Secret 
-  const authHeader = request.headers.authorization;
+export default async function handler(request: any, response: any) {
+  // Verificacin bsica de seguridad (opcional, recomendable usar un secreto en los headers)
+  const authHeader = request.headers['authorization'];
+  const cronSecret = process.env.CRON_SECRET;
   const querySecret = request.query.secret;
-  const secretKey = process.env.CRON_SECRET;
 
-  const isAuthorized = secretKey && (
-    authHeader === `Bearer ${secretKey}` || 
-    querySecret === secretKey
-  );
-
-  if (!isAuthorized) {
-    console.warn(`[Cron Job] Unauthorized attempt at ${now}`);
-    return response.status(401).json({ 
-      error: 'Unauthorized',
-      message: 'Invalid or missing CRON_SECRET token.'
-    });
+  if (cronSecret && querySecret !== cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    return response.status(401).json({ error: 'Unauthorized' });
   }
 
+  const now = new Date().toISOString();
+  console.log(`[Cron Job] Iniciando ejecucin a las ${now}`);
+
   try {
-    console.log('[Cron Job] Secret validated. Processing scheduled posts...');
     const result = await processScheduledPosts();
-
-    const duration = new Date().getTime() - new Date(now).getTime();
-    console.log("Publish endpoint executed successfully");
-    console.log(`[Cron Job] Execution finished. Processed: ${result.processed}, Succeeded: ${result.succeeded}, Failed: ${result.failed}. Duration: ${duration}ms`);
-
+    
     return response.status(200).json({
       job: 'publish_scheduled_posts',
       executed_at: now,
-      finished_at: new Date().toISOString(),
-      performance: {
-        duration_ms: duration
-      },
-      results: {
-        total_posts_processed: result.processed || 0,
+      summary: {
+        total_processed: result.processed || 0,
         successful_publishes: result.succeeded || 0,
         failed_publishes: result.failed || 0
       },

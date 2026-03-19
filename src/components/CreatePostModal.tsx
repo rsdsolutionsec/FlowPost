@@ -3,10 +3,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
+interface PrefillData {
+  copyId: string;
+  copyName?: string;
+  scheduledAt?: string;    // ISO string from suggested_at
+  mediaUrl?: string;       // R2 public URL
+  mediaFileName?: string;  // display name
+}
+
 interface CreatePostModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  prefill?: PrefillData;
 }
 
 // Helper to sanitize paths (Supabase Storage is picky with special chars like ñ or spaces)
@@ -96,7 +105,7 @@ const ImagePreview: React.FC<{ path: string; fileName: string; selected: boolean
   );
 }
 
-export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalProps) {
+export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }: CreatePostModalProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -143,6 +152,23 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
         if (copiesRes.data) {
           setCopies(copiesRes.data);
         }
+
+        // Apply prefill data after loading
+        if (prefill) {
+          setUseReusableCopy(true);
+          setSelectedCopyId(prefill.copyId);
+          if (prefill.scheduledAt) {
+            const d = new Date(prefill.scheduledAt);
+            const offset = d.getTimezoneOffset() * 60000;
+            const local = new Date(d.getTime() - offset).toISOString().slice(0, 16);
+            setFormData(prev => ({ ...prev, scheduled_at: local }));
+          }
+          if (prefill.mediaUrl) {
+            setImageSource('library');
+            setSelectedLibraryFile(prefill.mediaUrl);
+            setSelectedLibraryFileName(prefill.mediaFileName || prefill.mediaUrl.split('/').pop() || 'media');
+          }
+        }
       };
       fetchData();
     }
@@ -157,7 +183,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
           .select('*')
           .eq('user_id', user.id)
           .eq('path', folderIdentifier)
-          .order('mimetype', { ascending: false }) // Folders first (alphabetically 'folder' > 'image/...') - wait, 'f' < 'i'. Let's just sort.
+          .order('mimetype', { ascending: false })
           .order('created_at', { ascending: false });
         
         if (!error && data) {
@@ -267,6 +293,8 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
       }
 
       // 2. Insertar en la tabla posts
+      // If opened from Copy Library (prefill), save as 'pending' for user approval
+      const postStatus = prefill ? 'pending' : 'scheduled';
       const { error } = await supabase.from('posts').insert([
         {
           user_id: user.id,
@@ -278,7 +306,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
           image_path: filePath,
           scheduled_at: new Date(formData.scheduled_at).toISOString(),
           platform: formData.platform,
-          status: 'scheduled',
+          status: postStatus,
         },
       ]);
 
@@ -328,11 +356,26 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
           >
             <div className="p-8 space-y-6 overflow-y-auto">
               <div className="flex justify-between items-center">
-                <h3 className="text-2xl font-extrabold text-on-surface font-headline">Crear Nueva Publicación</h3>
+                <h3 className="text-2xl font-extrabold text-on-surface font-headline">
+                  {prefill ? 'Programar desde Copy' : 'Crear Nueva Publicación'}
+                </h3>
                 <button onClick={onClose} className="p-2 hover:bg-surface-container-low rounded-full transition-colors">
                   <span className="material-symbols-outlined">close</span>
                 </button>
               </div>
+
+              {/* Prefill banner */}
+              {prefill && (
+                <div className="flex items-start gap-3 p-4 bg-indigo-50 border border-indigo-100 rounded-2xl">
+                  <span className="material-symbols-outlined text-indigo-500 text-[20px] mt-0.5">auto_awesome</span>
+                  <div>
+                    <p className="text-xs font-black text-indigo-700 uppercase tracking-widest">Pre-configurado desde Copy</p>
+                    <p className="text-xs text-indigo-500 font-medium mt-0.5">
+                      <strong>{prefill.copyName}</strong> · Revisa y completa los datos antes de guardar como pendiente.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <form id="create-post-form" onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -577,10 +620,17 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
                 type="submit"
                 form="create-post-form"
                 disabled={loading}
-                className="w-full py-4 bg-primary text-white font-black text-sm uppercase tracking-widest rounded-2xl hover:translate-y-[-2px] hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                className={`w-full py-4 text-white font-black text-sm uppercase tracking-widest rounded-2xl hover:translate-y-[-2px] hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2 ${
+                  prefill ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' : 'bg-primary shadow-primary/20'
+                } shadow-xl`}
               >
                 {loading ? (
                   'Procesando...'
+                ) : prefill ? (
+                  <>
+                    <span className="material-symbols-outlined text-sm">pending_actions</span>
+                    <span>Guardar como Pendiente</span>
+                  </>
                 ) : (
                   <>
                     <span className="material-symbols-outlined text-sm">rocket_launch</span>

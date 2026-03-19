@@ -47,7 +47,7 @@ function ImagePreview({ path }: { path: string }) {
   return <img src={url} alt="Post media" className="w-full h-full object-cover" />;
 }
 
-export function ScheduledPosts() {
+export default function ScheduledPosts() {
   const { user } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);

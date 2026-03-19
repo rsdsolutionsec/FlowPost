@@ -146,7 +146,8 @@ export default function MediaLibrary() {
       }
       await fetchMedia();
     } catch (error: any) {
-      alert('Error uploading file: ' + error.message);
+      console.error('Upload Error Context:', error);
+      alert('Error uploading file (check CORS in Cloudflare): ' + error.message);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

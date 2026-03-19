@@ -276,7 +276,8 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
       setMediaCurrentFolder('');
       
     } catch (error: any) {
-      alert('Error al crear el post: ' + error.message);
+      console.error('Post Creation Error Context:', error);
+      alert('Error al crear el post (verifica CORS en Cloudflare): ' + error.message);
     } finally {
       setLoading(false);
     }

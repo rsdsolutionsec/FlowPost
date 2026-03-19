@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.local
+.env.production
+.DS_Store
+*.log
+marketing_system/published.json
+marketing_system/logs/
+marketing_system/.env

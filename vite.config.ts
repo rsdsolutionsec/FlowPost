@@ -15,6 +15,21 @@ export default defineConfig(({mode}) => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      chunkSizeWarningLimit: 1000,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('framer-motion')) return 'animations';
+              if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) return 'react-core';
+              if (id.includes('@supabase')) return 'supabase';
+              return 'vendor';
+            }
+          }
+        }
+      }
+    },
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
     },

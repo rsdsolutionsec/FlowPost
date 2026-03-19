@@ -9,5 +9,15 @@
     "api/publish.ts": {
       "includeFiles": "lib/**"
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ]
 }

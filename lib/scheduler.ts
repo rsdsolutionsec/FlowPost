@@ -40,7 +40,7 @@ export async function processScheduledPosts() {
       console.log(`[Scheduler] Procesando post ID: ${post.id}`);
 
       const resolvedCaption = post.copy_id && post.copies
-        ? post.copies.content
+        ? (post.copies as any).content
         : (post.custom_caption || post.caption || '');
 
       if (!resolvedCaption.trim()) {
@@ -48,43 +48,49 @@ export async function processScheduledPosts() {
       }
 
       if (!post.image_path) {
-        throw new Error('El post no tiene una ruta de imagen (image_path)');
+        throw new Error('El post no tiene una ruta de medio (image_path/media)');
       }
 
-      console.log(`[Scheduler] Descargando imagen: ${post.image_path}`);
-      let imageData: Blob;
+      // Limpiar y detectar tipo de medio
+      const mediaPath = post.image_path.trim();
+      const isVideo = /\.(mp4|mov|avi|wmv|flv|webm|mkv)$/i.test(mediaPath);
+      const mediaType = isVideo ? 'video' : 'image';
 
-      if (post.image_path.startsWith('http')) {
+      console.log(`[Scheduler] Descargando ${mediaType}: ${mediaPath}`);
+      let mediaData: Blob;
+
+      if (mediaPath.startsWith('http')) {
         // Content from R2 via Public URL
-        const response = await fetch(post.image_path);
+        const response = await fetch(mediaPath);
         if (!response.ok) {
-          throw new Error(`Error al descargar imagen desde R2 (${response.status}): ${response.statusText}`);
+          throw new Error(`Error al descargar ${mediaType} desde R2 (${response.status}): ${response.statusText}`);
         }
-        imageData = await response.blob();
+        mediaData = await response.blob();
       } else {
         // Content from Supabase Storage (Legacy)
         const { data, error: downloadError } = await supabaseAdmin
           .storage
           .from('posts')
-          .download(post.image_path);
+          .download(mediaPath);
 
         if (downloadError || !data) {
-          throw new Error(`Error al descargar imagen de Storage: ${downloadError?.message || 'Archivo no encontrado'}`);
+          throw new Error(`Error al descargar ${mediaType} de Storage: ${downloadError?.message || 'Archivo no encontrado'}`);
         }
-        imageData = data;
+        mediaData = data;
       }
 
       const pageData = post.facebook_pages;
-      if (!pageData || !pageData.page_id || !pageData.page_access_token) {
+      if (!pageData || !(pageData as any).page_id || !(pageData as any).page_access_token) {
         throw new Error('No se encontraron credenciales de Facebook para este post (facebook_pages missing)');
       }
 
-      console.log(`[Scheduler] Enviando binario a Facebook (Page: ${pageData.page_id})...`);
+      console.log(`[Scheduler] Enviando ${mediaType} a Facebook (Page: ${(pageData as any).page_id})...`);
       const result = await publishToFacebook(
-        imageData, 
+        mediaData, 
         resolvedCaption,
-        pageData.page_id,
-        pageData.page_access_token
+        (pageData as any).page_id,
+        (pageData as any).page_access_token,
+        mediaType
       );
 
       if (result.success) {
@@ -94,7 +100,8 @@ export async function processScheduledPosts() {
             status: 'published',
             metadata: { 
               fb_post_id: result.id,
-              fb_published_at: new Date().toISOString()
+              fb_published_at: new Date().toISOString(),
+              media_type: mediaType
             }
           })
           .eq('id', post.id);
@@ -104,7 +111,7 @@ export async function processScheduledPosts() {
         }
         
         succeeded++;
-        console.log(`[Scheduler] Post ${post.id} publicado con éxito.`);
+        console.log(`[Scheduler] Post ${post.id} (${mediaType}) publicado con éxito.`);
       } else {
         await supabaseAdmin
           .from('posts')
@@ -112,7 +119,8 @@ export async function processScheduledPosts() {
             status: 'failed',
             metadata: { 
               error: result.error, 
-              failed_at: new Date().toISOString() 
+              failed_at: new Date().toISOString(),
+              media_type: mediaType
             }
           })
           .eq('id', post.id);

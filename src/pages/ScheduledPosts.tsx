@@ -7,9 +7,12 @@ import CreatePostModal from '../components/CreatePostModal';
 interface Post {
   id: string;
   caption: string;
+  custom_caption?: string;
+  copies?: { name: string } | null;
+  copy_id?: string | null;
   image_path: string;
   scheduled_at: string;
-  status: 'scheduled' | 'published' | 'failed';
+  status: 'scheduled' | 'published' | 'failed' | 'pending';
   platform: string;
 }
 
@@ -85,13 +88,24 @@ export default function ScheduledPosts() {
     if (!confirm('¿Estás seguro de que quieres eliminar este post?')) return;
 
     try {
-      // 2. Eliminar de DB
       const { error } = await supabase.from('posts').delete().eq('id', id);
       if (error) throw error;
-      
       setPosts(posts.filter(p => p.id !== id));
     } catch (error: any) {
       alert('Error al eliminar: ' + error.message);
+    }
+  };
+
+  const handleApprove = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('posts')
+        .update({ status: 'scheduled' })
+        .eq('id', id);
+      if (error) throw error;
+      setPosts(posts.map(p => p.id === id ? { ...p, status: 'scheduled' as const } : p));
+    } catch (error: any) {
+      alert('Error al aprobar: ' + error.message);
     }
   };
 
@@ -164,10 +178,13 @@ export default function ScheduledPosts() {
                     <span className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wider ${
                       post.status === 'published' ? 'bg-emerald-100 text-emerald-700' :
                       post.status === 'failed' ? 'bg-rose-100 text-rose-700' :
-                      'bg-amber-100 text-amber-700'
+                      post.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                      'bg-sky-100 text-sky-700'
                     }`}>
                       {post.status === 'published' ? 'Publicado' : 
-                       post.status === 'failed' ? 'Error' : 'Programado'}
+                       post.status === 'failed' ? 'Error' :
+                       post.status === 'pending' ? 'Pendiente' :
+                       'Programado'}
                     </span>
                     <span className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] ${
                       post.platform === 'facebook' ? 'bg-blue-600' : 'bg-gradient-to-tr from-amber-400 via-rose-500 to-purple-600'
@@ -175,24 +192,34 @@ export default function ScheduledPosts() {
                       <span className="material-symbols-outlined text-[14px]">
                         {post.platform === 'facebook' ? 'thumb_up' : 'photo_camera'}
                       </span>
-                      <div className="space-y-1 overflow-hidden">
-                        <div className="flex items-center gap-2">
-                          {post.copies ? (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black bg-primary/10 text-primary border border-primary/20 uppercase tracking-tighter">Copy: {post.copies.name}</span>
-                          ) : (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-tighter">Manual</span>
-                          )}
-                        </div>
-                        <p className="text-sm text-slate-600 truncate font-medium">
-                          {post.copies ? 'Usando copy guardado...' : (post.custom_caption || post.caption || 'Sin texto')}
-                        </p>
-                      </div>
                     </span>
+                  </div>
+                  <div className="space-y-1 overflow-hidden">
+                    <div className="flex items-center gap-2">
+                      {post.copies ? (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black bg-primary/10 text-primary border border-primary/20 uppercase tracking-tighter">Copy: {post.copies.name}</span>
+                      ) : (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-black bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-tighter">Manual</span>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-600 truncate font-medium">
+                      {post.copies ? 'Usando copy guardado...' : (post.custom_caption || post.caption || 'Sin texto')}
+                    </p>
                   </div>
                 </div>
 
                 {/* Actions */}
                 <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {post.status === 'pending' && (
+                    <button 
+                      onClick={() => handleApprove(post.id)}
+                      className="h-10 px-3 rounded-xl bg-amber-50 text-amber-700 flex items-center gap-1 hover:bg-amber-100 transition-colors text-xs font-black uppercase tracking-wider"
+                      title="Aprobar y programar este post"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">task_alt</span>
+                      <span>Aprobar</span>
+                    </button>
+                  )}
                   <button 
                     onClick={() => handleDelete(post.id, post.image_path)}
                     className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100 transition-colors"

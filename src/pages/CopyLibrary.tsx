@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import CreateCopyModal from '../components/CreateCopyModal';
 import ImportCopyModal from '../components/ImportCopyModal';
+import CreatePostModal from '../components/CreatePostModal';
 
 interface Copy {
   id: string;
@@ -21,6 +22,7 @@ export default function CopyLibrary() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editingCopy, setEditingCopy] = useState<Copy | null>(null);
+  const [scheduleFromCopy, setScheduleFromCopy] = useState<Copy | null>(null);
 
   const fetchCopies = async () => {
     if (!user) return;
@@ -108,6 +110,21 @@ export default function CopyLibrary() {
         onSuccess={fetchCopies}
       />
 
+      <CreatePostModal
+        isOpen={!!scheduleFromCopy}
+        onClose={() => setScheduleFromCopy(null)}
+        onSuccess={() => setScheduleFromCopy(null)}
+        prefill={scheduleFromCopy ? {
+          copyId: scheduleFromCopy.id,
+          copyName: scheduleFromCopy.name,
+          scheduledAt: scheduleFromCopy.suggested_at,
+          mediaUrl: scheduleFromCopy.media_path && scheduleFromCopy.media_path.startsWith('http') 
+            ? scheduleFromCopy.media_path 
+            : undefined,
+          mediaFileName: scheduleFromCopy.media_path ? scheduleFromCopy.media_path.split('/').pop() : undefined
+        } : undefined}
+      />
+
       {/* Grid of Copies */}
       {loading ? (
         <div className="text-center py-24 text-slate-400 font-bold uppercase tracking-[0.2em] animate-pulse">Cargando librería...</div>
@@ -133,6 +150,13 @@ export default function CopyLibrary() {
                 <div className="flex justify-between items-start">
                   <h4 className="font-black text-xl text-slate-900 font-headline leading-tight truncate pr-12">{copy.name}</h4>
                   <div className="absolute top-0 right-0 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button 
+                      onClick={() => setScheduleFromCopy(copy)}
+                      className="p-2 text-slate-400 hover:text-amber-500 transition-colors"
+                      title="Programar post desde este copy"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">schedule_send</span>
+                    </button>
                     <button 
                       onClick={() => handleEdit(copy)}
                       className="p-2 text-slate-400 hover:text-indigo-600 transition-colors"

@@ -4,14 +4,16 @@ import Topbar from './Topbar';
 
 export default function AppLayout() {
   return (
-    <div className="min-h-screen bg-surface flex">
+    <div className="flex h-screen bg-surface w-full overflow-hidden">
       <Sidebar />
-      <Topbar />
-      <main className="flex-1 ml-[280px] pt-[72px]">
-        <div className="p-12 lg:p-16 max-w-[1400px] mx-auto">
-          <Outlet />
-        </div>
-      </main>
+      <div className="flex-1 flex flex-col min-w-0">
+        <Topbar />
+        <main className="flex-1 overflow-y-auto bg-surface-container-lowest/50 rounded-tl-[2.5rem] mt-2 mr-2 mb-2 p-8 shadow-[inset_0_2px_10px_rgba(0,0,0,0.02)]">
+          <div className="max-w-7xl mx-auto">
+            <Outlet />
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

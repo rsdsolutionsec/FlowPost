@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,6 +7,66 @@ interface CreatePostModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+}
+
+function ImagePreview({ path, fileName, selected, onClick }: { path: string; fileName: string; selected: boolean; onClick: () => void }) {
+  const [url, setUrl] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let objectUrl: string;
+    const loadImg = async () => {
+      try {
+        const { data, error } = await supabase.storage.from('posts').download(path);
+        if (error) throw error;
+        if (data) {
+          objectUrl = URL.createObjectURL(data);
+          setUrl(objectUrl);
+        }
+      } catch (err) {
+        console.error('Error cargando preview:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadImg();
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [path]);
+
+  return (
+    <div 
+      onClick={onClick}
+      className="relative flex-none w-24 h-24 snap-start cursor-pointer rounded-xl overflow-hidden group"
+    >
+      {loading ? (
+        <div className="w-full h-full bg-slate-100 flex items-center justify-center animate-pulse rounded-xl border-2 border-transparent">
+          <span className="material-symbols-outlined text-slate-300">image</span>
+        </div>
+      ) : url ? (
+        <img 
+          src={url} 
+          alt={fileName}
+          className={`w-full h-full object-cover border-[3px] rounded-xl transition-all duration-200 ${
+            selected 
+            ? 'border-primary shadow-md scale-95' 
+            : 'border-transparent group-hover:border-primary/30 focus:border-primary/30'
+          }`}
+        />
+      ) : (
+        <div className="w-full h-full bg-slate-100 flex items-center justify-center rounded-xl border-2 border-transparent">
+          <span className="material-symbols-outlined text-rose-300">broken_image</span>
+        </div>
+      )}
+      
+      {selected && (
+        <div className="absolute top-1 right-1 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center shadow-sm">
+          <span className="material-symbols-outlined text-[12px] font-bold">check</span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalProps) {
@@ -33,7 +93,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
     platform: 'facebook',
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (isOpen && user) {
       const fetchData = async () => {
         const [pagesRes, campaignsRes, copiesRes, mediaRes] = await Promise.all([
@@ -65,12 +125,6 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
     if (e.target.files && e.target.files[0]) {
       setImageFile(e.target.files[0]);
     }
-  };
-
-  const getImageUrl = (fileName: string) => {
-    if (!user) return '';
-    const { data } = supabase.storage.from('posts').getPublicUrl(`${user.id}/${fileName}`);
-    return data.publicUrl;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -293,26 +347,13 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
                         {libraryFiles.length > 0 ? (
                           <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar snap-x">
                             {libraryFiles.map(file => (
-                              <div 
-                                key={file.id}
+                              <ImagePreview 
+                                key={file.id} 
+                                path={`${user.id}/${file.name}`} 
+                                fileName={file.name} 
+                                selected={selectedLibraryFile === file.name}
                                 onClick={() => setSelectedLibraryFile(file.name)}
-                                className="relative flex-none w-24 h-24 snap-start cursor-pointer rounded-xl overflow-hidden group"
-                              >
-                                <img 
-                                  src={getImageUrl(file.name)} 
-                                  alt={file.name}
-                                  className={`w-full h-full object-cover border-[3px] rounded-xl transition-all duration-200 ${
-                                    selectedLibraryFile === file.name 
-                                    ? 'border-primary shadow-md scale-95' 
-                                    : 'border-transparent group-hover:border-primary/30 focus:border-primary/30'
-                                  }`}
-                                />
-                                {selectedLibraryFile === file.name && (
-                                  <div className="absolute top-1 right-1 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center shadow-sm">
-                                    <span className="material-symbols-outlined text-[12px] font-bold">check</span>
-                                  </div>
-                                )}
-                              </div>
+                              />
                             ))}
                           </div>
                         ) : (

@@ -3,6 +3,58 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
+function ImagePreview({ path, fileName }: { path: string; fileName: string }) {
+  const [url, setUrl] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let objectUrl: string;
+    const loadImg = async () => {
+      try {
+        const { data, error } = await supabase.storage.from('posts').download(path);
+        if (error) throw error;
+        if (data) {
+          objectUrl = URL.createObjectURL(data);
+          setUrl(objectUrl);
+        }
+      } catch (err) {
+        console.error('Error cargando preview:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadImg();
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [path]);
+
+  if (loading) {
+    return (
+      <div className="w-full h-full bg-slate-100 flex items-center justify-center animate-pulse">
+        <span className="material-symbols-outlined text-slate-300">image</span>
+      </div>
+    );
+  }
+
+  if (!url) {
+    return (
+      <div className="w-full h-full bg-slate-100 flex items-center justify-center">
+        <span className="material-symbols-outlined text-rose-300">broken_image</span>
+      </div>
+    );
+  }
+
+  return (
+    <img 
+      src={url} 
+      alt={fileName} 
+      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+      loading="lazy"
+    />
+  );
+}
+
 export default function MediaLibrary() {
   const { user } = useAuth();
   const [files, setFiles] = useState<any[]>([]);
@@ -49,7 +101,6 @@ export default function MediaLibrary() {
       for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
         const fileExt = file.name.split('.').pop();
-        // create a random name while keeping original name suffix
         const fileName = `${Math.random().toString(36).substring(2)}_${file.name.replace(/\s+/g, '')}`;
         const filePath = `${user.id}/${fileName}`;
         
@@ -78,12 +129,6 @@ export default function MediaLibrary() {
     } finally {
       setDeletingId(null);
     }
-  };
-
-  const getImageUrl = (fileName: string) => {
-    if (!user) return '';
-    const { data } = supabase.storage.from('posts').getPublicUrl(`${user.id}/${fileName}`);
-    return data.publicUrl;
   };
 
   const formatFileSize = (bytes: number) => {
@@ -176,12 +221,7 @@ export default function MediaLibrary() {
 
                 {filteredFiles.map((file) => (
                   <div key={file.id} className="group relative aspect-square rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 cursor-pointer hover:shadow-lg transition-all">
-                    <img 
-                      src={getImageUrl(file.name)} 
-                      alt={file.name} 
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      loading="lazy"
-                    />
+                    <ImagePreview path={`${user.id}/${file.name}`} fileName={file.name} />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-4 flex flex-col justify-between">
                       <div className="flex justify-end">
                         <button 

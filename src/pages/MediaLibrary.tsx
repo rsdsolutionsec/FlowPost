@@ -41,7 +41,7 @@ function ImagePreview({ item }: { item: MediaItem }) {
   );
 }
 
-// Helper to sanitize paths (Supabase Storage is picky with special chars like ñ or spaces)
+// Helper to sanitize paths
 const sanitizePath = (name: string) => {
   return name
     .normalize('NFD') // Separate accents from characters
@@ -124,13 +124,20 @@ export default function MediaLibrary() {
         const { url, publicUrl } = await presignRes.json();
         
         // 2. Direct upload to R2
+        console.log('Starting fetch PUT to R2...');
         const uploadRes = await fetch(url, {
            method: 'PUT',
-           headers: { 'Content-Type': file.type },
+           headers: { 
+             'Content-Type': file.type 
+           },
+           mode: 'cors',
            body: file
         });
         
-        if (!uploadRes.ok) throw new Error('Upload to R2 bucket failed');
+        if (!uploadRes.ok) {
+          const errText = await uploadRes.text().catch(() => 'No response body');
+          throw new Error(`Upload to R2 bucket failed with status ${uploadRes.status}: ${errText}`);
+        }
 
         // 3. Save reference in DB
         const folderIdentifier = currentFolder ? `root/${currentFolder}` : 'root';

@@ -1,5 +1,5 @@
-import { supabaseAdmin } from './supabase';
-import { publishToFacebook } from './facebook';
+import { supabaseAdmin } from './supabase.js';
+import { publishToFacebook } from './facebook.js';
 
 /**
  * Función principal para procesar posts programados.
@@ -8,6 +8,7 @@ export async function processScheduledPosts() {
   const now = new Date().toISOString();
   console.log(`[Scheduler] Iniciando proceso de publicación a las ${now}`);
 
+  // 1. Consultar posts programados con sus respectivas credenciales de página
   const { data: posts, error } = await supabaseAdmin
     .from('posts')
     .select(`
@@ -39,6 +40,7 @@ export async function processScheduledPosts() {
     try {
       console.log(`[Scheduler] Procesando post ID: ${post.id}`);
 
+      // 1. Descargar imagen de Supabase Storage
       if (!post.image_path) {
         throw new Error('El post no tiene una ruta de imagen (image_path)');
       }
@@ -53,11 +55,13 @@ export async function processScheduledPosts() {
         throw new Error(`Error al descargar imagen de Storage: ${downloadError?.message || 'Archivo no encontrado'}`);
       }
 
+      // 2. Resolver credenciales de la página
       const pageData = post.facebook_pages;
       if (!pageData || !pageData.page_id || !pageData.page_access_token) {
         throw new Error('No se encontraron credenciales de Facebook para este post (facebook_pages missing)');
       }
 
+      // 3. Publicar en Facebook (pasando el binario y credenciales dinámicas)
       console.log(`[Scheduler] Enviando binario a Facebook (Page: ${pageData.page_id})...`);
       const result = await publishToFacebook(
         imageData, 
@@ -67,6 +71,7 @@ export async function processScheduledPosts() {
       );
 
       if (result.success) {
+        // 3. Actualizar estado a 'published'
         const { error: updateError } = await supabaseAdmin
           .from('posts')
           .update({ 
@@ -85,6 +90,7 @@ export async function processScheduledPosts() {
         succeeded++;
         console.log(`[Scheduler] Post ${post.id} publicado con éxito.`);
       } else {
+        // 4. Si falla la publicación, actualizar estado a 'failed'
         await supabaseAdmin
           .from('posts')
           .update({ 

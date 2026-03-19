@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { processScheduledPosts } from '../lib/scheduler';
+import { processScheduledPosts } from '../lib/scheduler.js';
 
 /**
  * Handler de la API /api/publish

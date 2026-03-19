@@ -1,23 +1,18 @@
 {
-  "crons": [
-    {
-      "path": "/api/publish?secret=CRON_SECRET",
-      "schedule": "0 9 * * *"
-    }
-  ],
-  "functions": {
-    "api/publish.ts": {
-      "includeFiles": "lib/**"
-    }
-  },
+  "version": 2,
   "rewrites": [
     {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },
     {
-      "source": "/((?!api/).*)",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "functions": {
+    "api/publish.ts": {
+      "includeFiles": "lib/**"
+    }
+  }
 }

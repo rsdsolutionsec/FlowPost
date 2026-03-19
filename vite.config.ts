@@ -1,37 +1,29 @@
-import tailwindcss from '@tailwindcss/vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig, loadEnv} from 'vite';
 
-export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, '.', '');
-  return {
-    plugins: [tailwindcss(), react()],
-    define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
     },
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
+  },
+  build: {
+    target: 'esnext',
+    outDir: 'dist',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-supabase': ['@supabase/supabase-js'],
+          'vendor-animation': ['framer-motion'],
+        },
       },
     },
-    build: {
-      chunkSizeWarningLimit: 1000,
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (id.includes('node_modules')) {
-              if (id.includes('framer-motion')) return 'animations';
-              if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) return 'react-core';
-              if (id.includes('@supabase')) return 'supabase';
-              return 'vendor';
-            }
-          }
-        }
-      }
-    },
-    server: {
-      hmr: process.env.DISABLE_HMR !== 'true',
-    },
-  };
+  },
+  optimizeDeps: {
+    include: ['framer-motion'],
+  },
 });

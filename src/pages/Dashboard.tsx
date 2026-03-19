@@ -25,7 +25,7 @@ export default function Dashboard() {
         const [scheduledRes, publishedTodayRes, recentRes] = await Promise.all([
           supabase.from('posts').select('*', { count: 'exact', head: true }).eq('status', 'scheduled').eq('user_id', user.id),
           supabase.from('posts').select('*', { count: 'exact', head: true }).eq('status', 'published').gte('created_at', startOfDay.toISOString()).eq('user_id', user.id),
-          supabase.from('posts').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(3)
+          supabase.from('posts').select('*, copies(name)').eq('user_id', user.id).order('created_at', { ascending: false }).limit(3)
         ]);
 
         setStats({
@@ -52,6 +52,7 @@ export default function Dashboard() {
       animate={{ opacity: 1, scale: 1 }}
       className="space-y-10 pb-20"
     >
+      {/* Welcome & Status */}
       <section className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="space-y-2">
           <h2 className="text-5xl font-black tracking-tight text-slate-900 font-headline">
@@ -68,10 +69,11 @@ export default function Dashboard() {
           to="/scheduled" 
           className="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:scale-105 transition-transform shadow-xl shadow-indigo-600/20 active:scale-95 text-center"
         >
-          Crear Publicación
+          Crear Publicacin
         </Link>
       </section>
 
+      {/* Simplified Bento Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           icon="schedule_send" 
@@ -101,14 +103,14 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
         <div className="lg:col-span-2">
           <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100 h-full">
-             <h3 className="text-2xl font-black text-slate-900 mb-8 font-headline">Lo último</h3>
+             <h3 className="text-2xl font-black text-slate-900 mb-8 font-headline">Lo ltimo</h3>
              <div className="space-y-6">
                 {recentPosts.length === 0 ? (
                   <div className="py-12 text-center space-y-4">
                     <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto">
                       <span className="material-symbols-outlined text-slate-300 text-3xl">post_add</span>
                     </div>
-                    <p className="text-slate-400 font-medium italic">Aún no hay publicaciones recientes.</p>
+                    <p className="text-slate-400 font-medium italic">An no hay publicaciones recientes.</p>
                   </div>
                 ) : (
                   recentPosts.map(post => (
@@ -121,10 +123,12 @@ export default function Dashboard() {
                           {post.status === 'published' ? 'check_circle' : post.status === 'failed' ? 'error' : 'schedule'}
                         </span>
                       </div>
-                      <div className="flex-1 truncate">
-                        <p className="font-black text-slate-900 truncate">{post.caption || 'Sem titulo'}</p>
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{post.status}</p>
-                      </div>
+                       <div className="flex-1 truncate">
+                         <p className="font-black text-slate-900 truncate">
+                           {post.copies ? `Copy: ${post.copies.name}` : (post.custom_caption || post.caption || 'Sin ttulo')}
+                         </p>
+                         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{post.status}</p>
+                       </div>
                     </div>
                   ))
                 )}

@@ -1,192 +1,113 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { motion } from 'framer-motion';
-import { supabase } from '../../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
-
-interface Campaign {
-  id: string;
-  name: string;
-  description: string;
-  status: 'active' | 'draft' | 'completed';
-  created_at: string;
-}
-
-interface Post {
-  id: string;
-  image_path: string;
-  caption: string;
-}
 
 export default function Campaigns() {
-  const { user } = useAuth();
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
-  const [assets, setAssets] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const fetchCampaigns = async () => {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('campaigns')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      setCampaigns(data || []);
-      if (data && data.length > 0 && !selectedCampaign) {
-        setSelectedCampaign(data[0]);
-      }
-    } catch (error: any) {
-      console.error('Error fetching campaigns:', error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchAssets = async (campaignId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('id, image_path, caption')
-        .eq('campaign_id', campaignId);
-      if (error) throw error;
-      setAssets(data || []);
-    } catch (error: any) {
-      console.error('Error fetching assets:', error.message);
-    }
-  };
-
-  useEffect(() => {
-    fetchCampaigns();
-  }, [user]);
-
-  useEffect(() => {
-    if (selectedCampaign) {
-      fetchAssets(selectedCampaign.id);
-    }
-  }, [selectedCampaign]);
-
-  const handleCreateCampaign = async () => {
-    const name = prompt('Nombre de la campaña:');
-    if (!name) return;
-    try {
-      const { data, error } = await supabase.from('campaigns').insert([
-        { user_id: user?.id, name, status: 'active' }
-      ]).select();
-      if (error) throw error;
-      if (data) {
-        setCampaigns([data[0], ...campaigns]);
-        setSelectedCampaign(data[0]);
-      }
-    } catch (error: any) {
-      alert('Error: ' + error.message);
-    }
-  };
-
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
     >
+      {/* Header */}
       <div className="mb-12 flex justify-between items-end">
         <div>
-          <div className="flex items-center gap-2 text-slate-400 text-xs font-bold tracking-widest uppercase mb-2">
-            <span>Espacio de Trabajo</span>
-            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-            <span className="text-primary">Campañas</span>
-          </div>
-          <h2 className="text-4xl font-extrabold tracking-tight text-on-surface font-headline">
-            {selectedCampaign?.name || 'Mis Campañas'}
-          </h2>
-          <p className="text-slate-500 mt-2 font-medium">Gestiona tus campañas de marketing multicanal.</p>
+          <h2 className="text-4xl font-extrabold tracking-tight text-on-surface font-headline">Campañas</h2>
+          <p className="text-slate-500 mt-2 font-medium">Agrupa tus publicaciones por objetivos y eventos.</p>
         </div>
-        <div className="flex gap-3">
-          <button 
-            onClick={handleCreateCampaign}
-            className="px-5 py-2.5 bg-primary text-white font-semibold rounded-full hover:translate-y-[-1px] transition-all flex items-center gap-2"
-          >
-            <span className="material-symbols-outlined text-[18px]">add</span>
-            <span>Nueva Campaña</span>
-          </button>
-        </div>
+        <button className="px-5 py-2.5 bg-primary text-white font-semibold rounded-full hover:translate-y-[-1px] transition-all flex items-center gap-2">
+          <span className="material-symbols-outlined text-[18px]">add</span>
+          <span>Nueva Campaña</span>
+        </button>
       </div>
 
-      <div className="grid grid-cols-12 gap-10">
-        <div className="col-span-3 space-y-6">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 px-2">Campañas</h3>
-          <div className="space-y-3">
-            {campaigns.map((c) => (
-              <div 
-                key={c.id}
-                onClick={() => setSelectedCampaign(c)}
-                className={`p-5 rounded-xl shadow-sm ghost-border cursor-pointer transition-all flex items-start gap-4 ${
-                  selectedCampaign?.id === c.id ? 'bg-surface-container-lowest ring-2 ring-primary/10' : 'bg-surface-container-low hover:bg-surface-container'
-                }`}
-              >
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                  selectedCampaign?.id === c.id ? 'bg-primary-fixed text-primary' : 'bg-slate-200 text-slate-400'
-                }`}>
-                  <span className="material-symbols-outlined" style={{ fontVariationSettings: selectedCampaign?.id === c.id ? "'FILL' 1" : "" }}>folder</span>
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  <p className="font-bold text-sm truncate">{c.name}</p>
-                  <p className="text-xs text-slate-500 capitalize">{c.status}</p>
-                </div>
+      {/* Campaigns Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        
+        {/* Campaign Card 1 */}
+        <div className="bg-surface-container-lowest rounded-3xl shadow-sm overflow-hidden group ghost-border border border-slate-100">
+          <div className="h-40 bg-indigo-600 relative overflow-hidden">
+            {/* Decorative background patterns */}
+            <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '20px 20px' }}></div>
+            <div className="absolute bottom-4 left-6">
+              <span className="px-2 py-1 bg-white/20 backdrop-blur-md rounded text-[10px] font-black text-white uppercase tracking-widest">Activa</span>
+            </div>
+          </div>
+          <div className="p-8">
+            <h3 className="text-xl font-black text-slate-900 mb-2 font-headline group-hover:text-primary transition-colors">Lanzamiento Verano 2024</h3>
+            <p className="text-sm text-slate-500 mb-6 font-medium">Campaña principal para promocionar la nueva colección de temporada.</p>
+            
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="p-3 bg-surface-container-low rounded-xl">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Posts</p>
+                <p className="text-xl font-black text-slate-800">24</p>
               </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="col-span-9 space-y-8">
-          <div className="bg-surface-container-lowest rounded-2xl shadow-sm ghost-border overflow-hidden min-h-[400px]">
-            <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-primary flex items-center gap-2">
-                <span className="material-symbols-outlined text-[20px]">grid_view</span>
-                Recursos del Proyecto
-              </h3>
+              <div className="p-3 bg-surface-container-low rounded-xl">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Impacto</p>
+                <p className="text-xl font-black text-slate-800">12.5k</p>
+              </div>
             </div>
 
-            <div className="p-8 grid grid-cols-4 gap-6">
-              {assets.length === 0 ? (
-                <div className="col-span-full py-20 text-center text-slate-400 italic">
-                  No hay recursos asignados a esta campaña.
-                </div>
-              ) : (
-                assets.map((asset) => (
-                  <div key={asset.id} className="group relative aspect-square rounded-xl overflow-hidden bg-slate-100">
-                     <AssetPreview path={asset.image_path} />
-                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-4 flex flex-col justify-end text-white">
-                       <p className="text-[10px] font-medium truncate">{asset.caption}</p>
-                     </div>
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <div className="flex -space-x-2">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="w-8 h-8 rounded-full border-2 border-white bg-slate-200 overflow-hidden ring-1 ring-slate-100">
+                    <img src={`https://i.pravatar.cc/100?img=${i+10}`} alt="User" />
                   </div>
-                ))
-              )}
+                ))}
+              </div>
+              <button className="text-sm font-black text-primary uppercase tracking-widest flex items-center gap-1 hover:gap-2 transition-all">
+                Ver Detalles <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+              </button>
             </div>
           </div>
         </div>
+
+        {/* Campaign Card 2 */}
+        <div className="bg-surface-container-lowest rounded-3xl shadow-sm overflow-hidden group ghost-border border border-slate-100 opacity-60 grayscale hover:grayscale-0 hover:opacity-100 transition-all">
+          <div className="h-40 bg-slate-800 relative overflow-hidden">
+            <div className="absolute bottom-4 left-6">
+              <span className="px-2 py-1 bg-white/20 backdrop-blur-md rounded text-[10px] font-black text-white uppercase tracking-widest">Finalizada</span>
+            </div>
+          </div>
+          <div className="p-8">
+            <h3 className="text-xl font-black text-slate-900 mb-2 font-headline">Black Friday 2023</h3>
+            <p className="text-sm text-slate-500 mb-6 font-medium">Ofertas y promociones especiales para el mes de Noviembre.</p>
+            
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="p-3 bg-surface-container-low rounded-xl">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Posts</p>
+                <p className="text-xl font-black text-slate-800">18</p>
+              </div>
+              <div className="p-3 bg-surface-container-low rounded-xl">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Impacto</p>
+                <p className="text-xl font-black text-slate-800">8.9k</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <div className="flex -space-x-2">
+                {[4, 5].map(i => (
+                  <div key={i} className="w-8 h-8 rounded-full border-2 border-white bg-slate-200 overflow-hidden">
+                    <img src={`https://i.pravatar.cc/100?img=${i+20}`} alt="User" />
+                  </div>
+                ))}
+              </div>
+              <button className="text-sm font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                Ver Informe <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* New Campaign Placeholder */}
+        <div className="bg-slate-50/50 rounded-[3rem] border-4 border-dashed border-slate-200 flex flex-col items-center justify-center p-10 text-center hover:bg-slate-50 transition-colors cursor-pointer group">
+          <div className="w-20 h-20 rounded-full bg-white shadow-sm flex items-center justify-center mb-6 text-slate-300 group-hover:text-primary group-hover:scale-110 transition-all">
+            <span className="material-symbols-outlined text-4xl">add</span>
+          </div>
+          <h4 className="text-xl font-black text-slate-400 mb-2">Nueva Campaña</h4>
+          <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Comenzar ahora</p>
+        </div>
+
       </div>
     </motion.div>
   );
-}
-
-function AssetPreview({ path }: { path: string }) {
-  const [url, setUrl] = useState<string>('');
-  useEffect(() => {
-    let objectUrl: string;
-    const fetch = async () => {
-      const { data } = await supabase.storage.from('posts').download(path);
-      if (data) {
-        objectUrl = URL.createObjectURL(data);
-        setUrl(objectUrl);
-      }
-    };
-    fetch();
-    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [path]);
-
-  if (!url) return <div className="w-full h-full animate-pulse bg-slate-200" />;
-  return <img src={url} alt="Resource" className="w-full h-full object-cover" />;
 }

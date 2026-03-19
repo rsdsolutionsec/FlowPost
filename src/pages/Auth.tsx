@@ -1,117 +1,122 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { supabase } from '../../lib/supabase';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import React, { useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function Auth() {
+  const [loading, setLoading] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const navigate = useNavigate();
-  const { user } = useAuth();
-
-  useEffect(() => {
-    if (user) {
-      navigate('/dashboard');
-    }
-  }, [user, navigate]);
+  const [fullName, setFullName] = useState('');
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
-    setMessage(null);
 
     try {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { error } = await supabase.auth.signUp({ 
+          email, 
+          password,
+          options: {
+            data: { full_name: fullName }
+          }
+        });
         if (error) throw error;
-        setMessage('¡Registro exitoso! Revisa tu correo para verificar tu cuenta.');
+        alert('Check your email for confirmation!');
       }
-    } catch (err: any) {
-      setError(err.message || 'Ocurrió un error inesperado.');
+    } catch (error: any) {
+      alert(error.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-surface flex items-center justify-center p-4">
+    <div className="min-h-screen bg-surface flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Decorative Orbs */}
+      <div className="absolute top-0 -left-20 w-96 h-96 bg-primary/10 blur-[120px] rounded-full"></div>
+      <div className="absolute bottom-0 -right-20 w-96 h-96 bg-indigo-500/10 blur-[120px] rounded-full"></div>
+
       <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-md bg-surface-container-lowest p-8 rounded-3xl shadow-xl ghost-border"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-[480px] bg-white rounded-[3rem] shadow-2xl shadow-slate-200/50 p-10 md:p-16 border border-slate-100 z-10"
       >
-        <div className="text-center mb-8">
-          <div className="w-12 h-12 bg-primary mx-auto rounded-xl flex items-center justify-center text-white shadow-sm shadow-primary/30 mb-4">
-            <span className="material-symbols-outlined text-[28px]">rocket_launch</span>
+        <div className="text-center mb-12">
+          <div className="w-16 h-16 bg-slate-900 rounded-3xl flex items-center justify-center text-white mx-auto mb-8 shadow-xl shadow-slate-900/20">
+            <span className="material-symbols-outlined text-3xl">flow_chart</span>
           </div>
-          <h2 className="text-2xl font-extrabold tracking-tight text-slate-800 font-headline">
-            {isLogin ? 'Bienvenido a SociaSync' : 'Crea tu cuenta'}
-          </h2>
-          <p className="text-slate-500 text-sm mt-2">
-            {isLogin ? 'Inicia sesión para gestionar tus redes sociales.' : 'Comienza a automatizar tu contenido hoy mismo.'}
-          </p>
+          <h1 className="text-4xl font-black text-slate-900 tracking-tight font-headline mb-3">
+            {isLogin ? '¡Bienvenido!' : 'Crea tu cuenta'}
+          </h1>
+          <p className="text-slate-400 font-medium">Gestiona tu contenido de forma inteligente.</p>
         </div>
 
-        {error && (
-          <div className="mb-6 p-4 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-sm font-medium">
-            {error}
-          </div>
-        )}
+        <form onSubmit={handleAuth} className="space-y-6">
+          <AnimatePresence mode="wait">
+            {!isLogin && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="space-y-2"
+              >
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Nombre Completo</label>
+                <input
+                  type="text"
+                  required={!isLogin}
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full p-5 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-slate-900 text-sm font-bold transition-all"
+                  placeholder="Tu nombre"
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-        {message && (
-          <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-xl text-sm font-medium">
-            {message}
-          </div>
-        )}
-
-        <form onSubmit={handleAuth} className="space-y-5">
           <div className="space-y-2">
-            <label className="text-sm font-bold text-slate-700">Correo Electrónico</label>
-            <input 
-              type="email" 
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Correo Electrónico</label>
+            <input
+              type="email"
+              required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-4 py-3 bg-surface-container-low border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-              placeholder="tu@empresa.com"
+              className="w-full p-5 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-slate-900 text-sm font-bold transition-all"
+              placeholder="nombre@ejemplo.com"
             />
           </div>
+
           <div className="space-y-2">
-            <label className="text-sm font-bold text-slate-700">Contraseña</label>
-            <input 
-              type="password" 
+            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Contraseña</label>
+            <input
+              type="password"
+              required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-4 py-3 bg-surface-container-low border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+              className="w-full p-5 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-slate-900 text-sm font-bold transition-all"
               placeholder="••••••••"
             />
           </div>
 
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             disabled={loading}
-            className="w-full py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+            className="w-full py-5 bg-indigo-600 text-white font-black text-sm uppercase tracking-widest rounded-2xl hover:translate-y-[-2px] hover:shadow-xl hover:shadow-indigo-600/20 active:scale-[0.98] transition-all disabled:opacity-50"
           >
-            {loading ? 'Procesando...' : (isLogin ? 'Iniciar Sesión' : 'Registrarse')}
+            {loading ? 'Procesando...' : (isLogin ? 'Ingresar' : 'Registrarme')}
           </button>
         </form>
 
-        <div className="mt-6 text-center">
-          <button 
+        <div className="mt-12 text-center">
+          <button
             onClick={() => setIsLogin(!isLogin)}
-            className="text-sm font-bold text-primary hover:underline"
+            className="text-sm font-black text-slate-400 hover:text-indigo-600 transition-colors uppercase tracking-widest"
           >
-            {isLogin ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}
+            {isLogin ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Ingresa'}
           </button>
         </div>
       </motion.div>

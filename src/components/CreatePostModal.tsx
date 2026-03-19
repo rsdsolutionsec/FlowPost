@@ -104,8 +104,10 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
   // Media State
   const [imageSource, setImageSource] = useState<'upload' | 'library'>('upload');
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string>('');
   const [libraryItems, setLibraryItems] = useState<any[]>([]);
-  const [selectedLibraryFile, setSelectedLibraryFile] = useState<string>(''); // Full path selected
+  const [selectedLibraryFile, setSelectedLibraryFile] = useState<string>(''); // Full url selected
+  const [selectedLibraryFileName, setSelectedLibraryFileName] = useState<string>('');
   const [mediaCurrentFolder, setMediaCurrentFolder] = useState<string>('');
 
   const [pages, setPages] = useState<any[]>([]);
@@ -166,6 +168,17 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
     }
   }, [isOpen, user, mediaCurrentFolder, imageSource]);
 
+  // Handle local upload preview URL
+  useEffect(() => {
+    if (imageFile) {
+      const url = URL.createObjectURL(imageFile);
+      setUploadPreviewUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setUploadPreviewUrl('');
+    }
+  }, [imageFile]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setImageFile(e.target.files[0]);
@@ -179,7 +192,15 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
     } else {
        // Is a file - Use the public URL directly
        setSelectedLibraryFile(item.url);
+       setSelectedLibraryFileName(item.name);
     }
+  };
+
+  const handleRemoveMedia = () => {
+    setImageFile(null);
+    setSelectedLibraryFile('');
+    setSelectedLibraryFileName('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleGoBackFolder = () => {
@@ -273,6 +294,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
       setUseReusableCopy(false);
       setImageSource('upload');
       setSelectedLibraryFile('');
+      setSelectedLibraryFileName('');
       setMediaCurrentFolder('');
       
     } catch (error: any) {
@@ -488,6 +510,41 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
                     )}
                   </div>
                 </div>
+
+                {/* Selected Media Preview */}
+                {(imageFile || selectedLibraryFile) && (
+                  <div className="p-4 bg-primary/5 rounded-3xl border border-primary/10 animate-in zoom-in-95 duration-300">
+                    <div className="flex items-center gap-4">
+                      <div className="relative w-24 h-24 rounded-2xl overflow-hidden shadow-sm border-2 border-primary/20 bg-white flex-none">
+                        {imageFile?.type.startsWith('video/') || selectedLibraryFile.toLowerCase().match(/\.(mp4|webm|ogg)$/) ? (
+                          <div className="w-full h-full flex items-center justify-center bg-slate-100">
+                            <span className="material-symbols-outlined text-primary/40 text-4xl">movie</span>
+                          </div>
+                        ) : (
+                          <img 
+                            src={imageSource === 'upload' ? uploadPreviewUrl : selectedLibraryFile} 
+                            alt="Preview" 
+                            className="w-full h-full object-cover"
+                          />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">Medio Seleccionado</p>
+                        <p className="text-sm font-bold text-on-surface truncate">
+                          {imageSource === 'upload' ? imageFile?.name : selectedLibraryFileName}
+                        </p>
+                        <button 
+                          type="button"
+                          onClick={handleRemoveMedia}
+                          className="mt-2 flex items-center gap-1 text-[10px] font-bold text-rose-500 hover:text-rose-600 transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-sm">delete_sweep</span>
+                          Quitar Selección
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">

@@ -9,7 +9,24 @@ interface CreatePostModalProps {
   onSuccess: () => void;
 }
 
-function ImagePreview({ path, fileName, selected, onClick, isFolder }: { path: string; fileName: string; selected: boolean; onClick: () => void; isFolder?: boolean }) {
+// Helper to sanitize paths (Supabase Storage is picky with special chars like ñ or spaces)
+const sanitizePath = (name: string) => {
+  return name
+    .normalize('NFD') // Separate accents from characters
+    .replace(/[\u0300-\u036f]/g, '') // Remove accents (ñ -> n)
+    .replace(/[^a-zA-Z0-9.-]/g, '_') // Replace spaces and special chars with underscore
+    .replace(/_{2,}/g, '_'); // Collapse multiple underscores
+};
+
+interface ImagePreviewProps {
+  path: string;
+  fileName: string;
+  selected: boolean;
+  onClick: () => void;
+  isFolder?: boolean;
+}
+
+function ImagePreview({ path, fileName, selected, onClick, isFolder }: ImagePreviewProps) {
   const [url, setUrl] = useState<string>('');
   const [loading, setLoading] = useState(!isFolder);
 
@@ -196,7 +213,8 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
       if (imageSource === 'upload' && imageFile) {
         // 1. Subir archivo a Supabase Storage
         const fileExt = imageFile.name.split('.').pop();
-        const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const safeBaseName = sanitizePath(imageFile.name.replace(/\.[^/.]+$/, ""));
+        const fileName = `${Math.random().toString(36).substring(2)}_${safeBaseName}.${fileExt}`;
         filePath = `${user.id}/${fileName}`;
 
         const { error: uploadError } = await supabase.storage

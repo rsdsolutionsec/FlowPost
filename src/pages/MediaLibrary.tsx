@@ -55,6 +55,15 @@ function ImagePreview({ path, fileName }: { path: string; fileName: string }) {
   );
 }
 
+// Helper to sanitize paths (Supabase Storage is picky with special chars like ñ or spaces)
+const sanitizePath = (name: string) => {
+  return name
+    .normalize('NFD') // Separate accents from characters
+    .replace(/[\u0300-\u036f]/g, '') // Remove accents (ñ -> n)
+    .replace(/[^a-zA-Z0-9.-]/g, '_') // Replace spaces and special chars with underscore
+    .replace(/_{2,}/g, '_'); // Collapse multiple underscores
+};
+
 export default function MediaLibrary() {
   const { user } = useAuth();
   const [items, setItems] = useState<any[]>([]);
@@ -112,7 +121,8 @@ export default function MediaLibrary() {
       for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
         const fileExt = file.name.split('.').pop();
-        const fileName = `${Math.random().toString(36).substring(2)}_${file.name.replace(/\s+/g, '')}`;
+        const safeBaseName = sanitizePath(file.name.replace(/\.[^/.]+$/, ""));
+        const fileName = `${Math.random().toString(36).substring(2)}_${safeBaseName}.${fileExt}`;
         const filePath = currentFolder 
           ? `${user.id}/${currentFolder}/${fileName}` 
           : `${user.id}/${fileName}`;
@@ -135,7 +145,7 @@ export default function MediaLibrary() {
     
     setUploading(true);
     try {
-      const folderName = newFolderName.trim();
+      const folderName = sanitizePath(newFolderName.trim());
       const folderPath = currentFolder 
         ? `${user.id}/${currentFolder}/${folderName}/.emptyFolderPlaceholder`
         : `${user.id}/${folderName}/.emptyFolderPlaceholder`;

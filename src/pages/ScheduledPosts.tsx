@@ -97,7 +97,12 @@ export default function ScheduledPosts() {
   const handleDelete = async (id: string) => {
     if (!confirm('¿Estás seguro de que quieres eliminar este post?')) return;
     try {
-      const { error } = await supabase.from('posts').delete().eq('id', id);
+      const { error } = await supabase
+        .from('posts')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user?.id);
+      
       if (error) throw error;
       setPosts(posts.filter(p => p.id !== id));
       if (selectedPost?.id === id) setSelectedPost(null);
@@ -120,6 +125,32 @@ export default function ScheduledPosts() {
     }
   };
 
+  const handleApproveAll = async () => {
+    if (!user) return;
+    const pendingPosts = posts.filter(p => p.status === 'pending');
+    if (pendingPosts.length === 0) return;
+
+    if (!confirm(`¿Aprobar todas las (${pendingPosts.length}) publicaciones pendientes?`)) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('posts')
+        .update({ status: 'scheduled' })
+        .eq('user_id', user.id)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+      
+      setPosts(posts.map(p => p.status === 'pending' ? { ...p, status: 'scheduled' as const } : p));
+      await fetchPosts(); // Refresh to ensure UI is in sync
+    } catch (error: any) {
+      alert('Error al aprobar todos: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
@@ -133,6 +164,19 @@ export default function ScheduledPosts() {
           <p className="text-slate-500 font-medium">Gestiona tu calendario y aprueba las publicaciones pendientes.</p>
         </div>
         <div className="flex gap-3">
+          {posts.some(p => p.status === 'pending') && (
+            <button 
+              onClick={handleApproveAll}
+              disabled={loading}
+              className="px-6 py-4 bg-amber-500 text-white font-black rounded-2xl hover:bg-amber-600 transition-all flex items-center gap-2 shadow-lg shadow-amber-500/20 active:scale-95 translate-y-[-2px] disabled:opacity-60"
+            >
+              <span className="material-symbols-outlined text-[18px]">task_alt</span>
+              <span className="text-sm uppercase tracking-widest font-bold">Aprobar Todo</span>
+              <span className="ml-1 bg-white/20 text-white text-xs font-black px-2 py-0.5 rounded-full">
+                {posts.filter(p => p.status === 'pending').length}
+              </span>
+            </button>
+          )}
           <button 
             onClick={() => setIsModalOpen(true)}
             className="px-6 py-4 bg-slate-900 text-white font-black rounded-2xl hover:bg-indigo-600 transition-all flex items-center gap-2 shadow-xl shadow-slate-900/10 active:scale-95 translate-y-[-2px]"

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
 interface CreatePostModalProps {
@@ -59,7 +59,6 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
 
     setLoading(true);
     try {
-      // 1. Subir archivo a Supabase Storage
       const fileExt = imageFile.name.split('.').pop();
       const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `${user.id}/${fileName}`;
@@ -70,7 +69,6 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
 
       if (uploadError) throw uploadError;
 
-      // 2. Insertar en la tabla posts
       const { error } = await supabase.from('posts').insert([
         {
           user_id: user.id,
@@ -139,7 +137,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
                   ) : (
                     <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl text-sm font-bold border border-rose-100 flex items-center gap-2">
                       <span className="material-symbols-outlined">warning</span>
-                      <span>No tienes páginas conectadas. Conéctalas en Configuración.</span>
+                      <span>No tienes páginas conectadas. Conéntalas en Configuración.</span>
                     </div>
                   )}
                 </div>

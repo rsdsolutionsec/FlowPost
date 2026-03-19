@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
 interface Campaign {
@@ -115,7 +115,6 @@ export default function Campaigns() {
       </div>
 
       <div className="grid grid-cols-12 gap-10">
-        {/* Left Column: Campaign List */}
         <div className="col-span-3 space-y-6">
           <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 px-2">Campañas</h3>
           <div className="space-y-3">
@@ -141,7 +140,6 @@ export default function Campaigns() {
           </div>
         </div>
 
-        {/* Right Column: Assets */}
         <div className="col-span-9 space-y-8">
           <div className="bg-surface-container-lowest rounded-2xl shadow-sm ghost-border overflow-hidden min-h-[400px]">
             <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between">

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 
@@ -52,7 +52,6 @@ export default function Dashboard() {
       animate={{ opacity: 1, scale: 1 }}
       className="space-y-10 pb-20"
     >
-      {/* Welcome & Status */}
       <section className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="space-y-2">
           <h2 className="text-5xl font-black tracking-tight text-slate-900 font-headline">
@@ -73,7 +72,6 @@ export default function Dashboard() {
         </Link>
       </section>
 
-      {/* Simplified Bento Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           icon="schedule_send" 
@@ -105,31 +103,31 @@ export default function Dashboard() {
           <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-100 h-full">
              <h3 className="text-2xl font-black text-slate-900 mb-8 font-headline">Lo último</h3>
              <div className="space-y-6">
-               {recentPosts.length === 0 ? (
-                 <div className="py-12 text-center space-y-4">
-                   <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto">
-                     <span className="material-symbols-outlined text-slate-300 text-3xl">post_add</span>
-                   </div>
-                   <p className="text-slate-400 font-medium italic">Aún no hay publicaciones recientes.</p>
-                 </div>
-               ) : (
-                 recentPosts.map(post => (
-                   <div key={post.id} className="flex items-center gap-6 p-2 group">
-                     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${
-                       post.status === 'published' ? 'bg-emerald-50 text-emerald-600' : 
-                       post.status === 'failed' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'
-                     }`}>
-                       <span className="material-symbols-outlined text-2xl">
-                         {post.status === 'published' ? 'check_circle' : post.status === 'failed' ? 'error' : 'schedule'}
-                       </span>
-                     </div>
-                     <div className="flex-1 truncate">
-                       <p className="font-black text-slate-900 truncate">{post.caption || 'Sin título'}</p>
-                       <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{post.status}</p>
-                     </div>
-                   </div>
-                 ))
-               )}
+                {recentPosts.length === 0 ? (
+                  <div className="py-12 text-center space-y-4">
+                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto">
+                      <span className="material-symbols-outlined text-slate-300 text-3xl">post_add</span>
+                    </div>
+                    <p className="text-slate-400 font-medium italic">Aún no hay publicaciones recientes.</p>
+                  </div>
+                ) : (
+                  recentPosts.map(post => (
+                    <div key={post.id} className="flex items-center gap-6 p-2 group">
+                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${
+                        post.status === 'published' ? 'bg-emerald-50 text-emerald-600' : 
+                        post.status === 'failed' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'
+                      }`}>
+                        <span className="material-symbols-outlined text-2xl">
+                          {post.status === 'published' ? 'check_circle' : post.status === 'failed' ? 'error' : 'schedule'}
+                        </span>
+                      </div>
+                      <div className="flex-1 truncate">
+                        <p className="font-black text-slate-900 truncate">{post.caption || 'Sem titulo'}</p>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{post.status}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
              </div>
           </div>
         </div>

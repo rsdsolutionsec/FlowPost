@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
 interface FacebookPage {
@@ -161,7 +161,6 @@ export default function Accounts() {
         )}
       </div>
 
-      {/* Modal de Conexión */}
       <AnimatePresence>
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

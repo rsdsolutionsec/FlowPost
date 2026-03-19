@@ -9,7 +9,7 @@ interface CreatePostModalProps {
   onSuccess: () => void;
 }
 
-export function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalProps) {
+export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,6 +59,7 @@ export function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalP
 
     setLoading(true);
     try {
+      // 1. Subir archivo a Supabase Storage
       const fileExt = imageFile.name.split('.').pop();
       const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
       const filePath = `${user.id}/${fileName}`;
@@ -69,6 +70,7 @@ export function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalP
 
       if (uploadError) throw uploadError;
 
+      // 2. Insertar en la tabla posts
       const { error } = await supabase.from('posts').insert([
         {
           user_id: user.id,
@@ -88,7 +90,6 @@ export function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalP
       onClose();
       setFormData({ caption: '', scheduled_at: '', platform: 'facebook' });
       setImageFile(null);
-      setSelectedCampaignId('');
     } catch (error: any) {
       alert('Error al crear el post: ' + error.message);
     } finally {
@@ -101,7 +102,9 @@ export function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalP
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             onClick={onClose}
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
           />
@@ -135,8 +138,8 @@ export function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalP
                     </select>
                   ) : (
                     <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl text-sm font-bold border border-rose-100 flex items-center gap-2">
-                       <span className="material-symbols-outlined">warning</span>
-                       <span>No tienes páginas conectadas.</span>
+                      <span className="material-symbols-outlined">warning</span>
+                      <span>No tienes páginas conectadas. Conéctalas en Configuración.</span>
                     </div>
                   )}
                 </div>
@@ -161,35 +164,42 @@ export function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalP
                     required
                     value={formData.caption}
                     onChange={(e) => setFormData({ ...formData, caption: e.target.value })}
-                    className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 min-h-[100px] text-on-surface"
+                    className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 min-h-[120px] text-on-surface"
                     placeholder="¿Qué quieres compartir?"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-on-surface-variant uppercase tracking-wider">Imagen</label>
+                  <label className="text-sm font-bold text-on-surface-variant uppercase tracking-wider">Imagen (Archivo)</label>
                   <div 
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full p-6 bg-surface-container-low rounded-2xl border-2 border-dashed border-primary/20 hover:border-primary/50 transition-all cursor-pointer flex flex-col items-center justify-center gap-2"
+                    className="w-full p-8 bg-surface-container-low rounded-2xl border-2 border-dashed border-primary/20 hover:border-primary/50 transition-all cursor-pointer flex flex-col items-center justify-center gap-2"
                   >
                     <span className="material-symbols-outlined text-4xl text-primary/60">
                       {imageFile ? 'check_circle' : 'cloud_upload'}
                     </span>
-                    <span className="text-on-surface-variant font-bold text-xs">
-                      {imageFile ? imageFile.name : 'Subir imagen'}
+                    <span className="text-on-surface-variant font-bold text-center">
+                      {imageFile ? imageFile.name : 'Selecciona una imagen de tu equipo'}
                     </span>
-                    <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      className="hidden"
+                      accept="image/*"
+                    />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-on-surface-variant uppercase tracking-wider">Fecha</label>
+                    <label className="text-sm font-bold text-on-surface-variant uppercase tracking-wider">Programar para</label>
                     <input
-                      type="datetime-local" required
+                      type="datetime-local"
+                      required
                       value={formData.scheduled_at}
                       onChange={(e) => setFormData({ ...formData, scheduled_at: e.target.value })}
-                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm"
+                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface"
                     />
                   </div>
                   <div className="space-y-2">
@@ -197,7 +207,7 @@ export function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalP
                     <select
                       value={formData.platform}
                       onChange={(e) => setFormData({ ...formData, platform: e.target.value })}
-                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm"
+                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface"
                     >
                       <option value="facebook">Facebook</option>
                       <option value="instagram">Instagram</option>
@@ -207,10 +217,18 @@ export function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalP
 
                 <div className="pt-4">
                   <button
-                    type="submit" disabled={loading}
-                    className="w-full py-4 bg-primary text-white font-extrabold rounded-2xl hover:translate-y-[-2px] transition-all disabled:opacity-50"
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-4 bg-primary text-white font-extrabold rounded-2xl hover:translate-y-[-2px] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                   >
-                    {loading ? 'Procesando...' : 'Programar Publicación'}
+                    {loading ? (
+                      'Creando y Subiendo...'
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined">send</span>
+                        <span>Programar Publicación</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

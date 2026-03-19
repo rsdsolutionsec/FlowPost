@@ -36,6 +36,8 @@ export default async function handler(
     const toInsert = copies.map((item: any, index: number) => {
       const name = item.name?.trim() || `Imported Copy ${index + 1}`;
       const content = item.content?.trim();
+      const suggested_at = item.suggested_at || null;
+      const media_path = item.media_path?.trim() || null;
 
       if (!content) {
         failedCount++;
@@ -46,7 +48,9 @@ export default async function handler(
       return {
         user_id: userId,
         name,
-        content
+        content,
+        suggested_at,
+        media_path
       };
     }).filter(Boolean);
 

@@ -9,6 +9,8 @@ interface Copy {
   id: string;
   name: string;
   content: string;
+  suggested_at?: string;
+  media_path?: string;
   created_at: string;
 }
 
@@ -146,6 +148,24 @@ export default function CopyLibrary() {
                   </div>
                 </div>
                 <div className="h-[1px] w-full bg-slate-50"></div>
+                
+                {(copy.suggested_at || copy.media_path) && (
+                  <div className="flex flex-col gap-2 p-3 bg-slate-50/50 rounded-2xl border border-slate-100/50">
+                    {copy.suggested_at && (
+                      <div className="flex items-center gap-2 text-[10px] font-bold text-indigo-600 uppercase tracking-wider">
+                        <span className="material-symbols-outlined text-[14px]">event</span>
+                        <span>Sugerido: {new Date(copy.suggested_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    )}
+                    {copy.media_path && (
+                      <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">
+                        <span className="material-symbols-outlined text-[14px]">attachment</span>
+                        <span className="truncate">{copy.media_path}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <p className="text-slate-500 font-medium text-sm line-clamp-4 leading-relaxed italic whitespace-pre-wrap">
                   "{copy.content}"
                 </p>

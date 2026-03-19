@@ -5,6 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 interface ParsedCopy {
   name: string;
   content: string;
+  suggested_at?: string | null;
+  media_path?: string | null;
   status?: 'pending' | 'success' | 'error';
   error?: string;
 }
@@ -33,6 +35,25 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
   };
 
   const parseFile = (file: File) => {
+    const parseDate = (dateStr: string) => {
+      if (!dateStr || !dateStr.trim()) return null;
+      try {
+        // Format expected: 2026-19-03/16:37 -> YYYY-DD-MM/HH:mm
+        const [datePart, timePart] = dateStr.trim().split('/');
+        if (!datePart) return null;
+        
+        const [year, day, month] = datePart.split('-');
+        if (!year || !day || !month) return null;
+
+        // JS Date prefers YYYY-MM-DD
+        const isoString = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${timePart || '00:00'}:00`;
+        const date = new Date(isoString);
+        return isNaN(date.getTime()) ? null : date.toISOString();
+      } catch (e) {
+        return null;
+      }
+    };
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
@@ -41,13 +62,13 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
       if (format === 'csv') {
         const lines = text.split(/\r?\n/).filter(l => l.trim());
         if (lines.length > 1) {
-          // Skip header: name,content
           parsed = lines.slice(1).map((line, i) => {
-            const [name, ...contentParts] = line.split(',');
-            const content = contentParts.join(',').trim();
+            const [name, content, date, path] = line.split(',');
             return {
               name: name?.trim() || `Imported CSV ${i + 1}`,
-              content: content.replace(/^"|"$/g, '') // Basic quote removal
+              content: content?.trim()?.replace(/^"|"$/g, '') || '',
+              suggested_at: parseDate(date),
+              media_path: path?.trim() || null
             };
           });
         }
@@ -55,17 +76,19 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
         const lines = text.split(/\r?\n/).filter(l => l.trim());
         parsed = lines.map((line, i) => {
           const parts = line.split('|');
-          let name, content;
-          if (parts.length > 1) {
-            name = parts[0].trim() || `Imported TXT ${i + 1}`;
-            content = parts.slice(1).join('|').trim();
-          } else {
-            name = `Imported TXT ${i + 1}`;
-            content = line.trim();
+          if (parts.length >= 2) {
+            return {
+              name: parts[0].trim(),
+              content: parts[1].trim(),
+              suggested_at: parts[2] ? parseDate(parts[2]) : null,
+              media_path: parts[3] ? parts[3].trim() : null
+            };
           }
           return {
-            name,
-            content
+            name: `Imported TXT ${i + 1}`,
+            content: line.trim(),
+            suggested_at: null,
+            media_path: null
           };
         });
       }
@@ -145,7 +168,7 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
                         format === 'csv' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'
                       }`}
                     >
-                      CSV (name,content)
+                      CSV (name,content,date,path)
                     </button>
                     <button
                       onClick={() => { setFormat('txt'); reset(); }}
@@ -153,7 +176,7 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
                         format === 'txt' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'
                       }`}
                     >
-                      TXT (name | content)
+                      TXT (Name | Content | Date | Path)
                     </button>
                   </div>
 
@@ -188,23 +211,29 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
                         <button onClick={reset} className="text-[10px] font-black text-rose-500 uppercase tracking-widest hover:underline">Limpiar</button>
                       </div>
                       <div className="border border-slate-100 rounded-2xl overflow-hidden overflow-y-auto max-h-48">
-                        <table className="w-full text-left text-xs">
+                        <table className="w-full text-left text-[10px]">
                           <thead className="bg-slate-50 sticky top-0">
                             <tr>
                               <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">Nombre</th>
                               <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">Contenido</th>
+                              <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">Sugerido</th>
+                              <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">Media</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-50">
                             {preview.slice(0, 50).map((p, i) => (
                               <tr key={i}>
-                                <td className="px-4 py-3 text-slate-900 font-bold truncate max-w-[120px]">{p.name}</td>
-                                <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]">{p.content}</td>
+                                <td className="px-4 py-3 text-slate-900 font-bold truncate max-w-[100px]">{p.name}</td>
+                                <td className="px-4 py-3 text-slate-500 truncate max-w-[150px]">{p.content}</td>
+                                <td className="px-4 py-3 text-slate-400 font-medium whitespace-nowrap">
+                                  {p.suggested_at ? new Date(p.suggested_at).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
+                                </td>
+                                <td className="px-4 py-3 text-slate-400 truncate max-w-[100px]">{p.media_path || '-'}</td>
                               </tr>
                             ))}
                             {preview.length > 50 && (
                               <tr>
-                                <td colSpan={2} className="px-4 py-2 text-center text-slate-300 font-medium italic">
+                                <td colSpan={4} className="px-4 py-2 text-center text-slate-300 font-medium italic">
                                   ... y {preview.length - 50} copys más
                                 </td>
                               </tr>

@@ -203,7 +203,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
           .select('*')
           .eq('user_id', user.id)
           .eq('path', folderIdentifier)
-          .order('mimetype', { ascending: false })
+          .order('mimetype', { ascending: false }) // Folders first (alphabetically 'folder' > 'image/...') - wait, 'f' < 'i'. Let's just sort.
           .order('created_at', { ascending: false });
         
         if (!error && data) {

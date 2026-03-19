@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { signUp, signIn } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -9,87 +9,111 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  useEffect(() => {
+    if (user) {
+      navigate('/dashboard');
+    }
+  }, [user, navigate]);
+
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
+    setMessage(null);
+
     try {
       if (isLogin) {
-        const { error } = await signIn(email, password);
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        navigate('/dashboard');
       } else {
-        const { error } = await signUp(email, password);
+        const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        alert('Revisa tu email para confirmar tu cuenta');
+        setMessage('¡Registro exitoso! Revisa tu correo para verificar tu cuenta.');
       }
-    } catch (error: any) {
-      alert(error.message);
+    } catch (err: any) {
+      setError(err.message || 'Ocurrió un error inesperado.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-surface flex items-center justify-center p-6 font-manrope">
+    <div className="min-h-screen bg-surface flex items-center justify-center p-4">
       <motion.div 
-        initial={{ opacity: 0, scale: 0.9 }}
+        initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-md bg-surface-container-lowest rounded-[3rem] p-12 shadow-2xl ghost-border overflow-hidden relative"
+        className="w-full max-w-md bg-surface-container-lowest p-8 rounded-3xl shadow-xl ghost-border"
       >
-        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
-        
-        <div className="text-center mb-10">
-          <div className="w-16 h-16 bg-primary rounded-[2rem] flex items-center justify-center text-white mx-auto mb-6 shadow-lg shadow-primary/20">
-            <span className="material-symbols-outlined text-3xl">auto_awesome</span>
+        <div className="text-center mb-8">
+          <div className="w-12 h-12 bg-primary mx-auto rounded-xl flex items-center justify-center text-white shadow-sm shadow-primary/30 mb-4">
+            <span className="material-symbols-outlined text-[28px]">rocket_launch</span>
           </div>
-          <h1 className="text-3xl font-black text-on-surface font-headline tracking-tight">The Curator</h1>
-          <p className="text-slate-500 font-medium mt-2">Gestiona tu presencia social con IA</p>
+          <h2 className="text-2xl font-extrabold tracking-tight text-slate-800 font-headline">
+            {isLogin ? 'Bienvenido a SociaSync' : 'Crea tu cuenta'}
+          </h2>
+          <p className="text-slate-500 text-sm mt-2">
+            {isLogin ? 'Inicia sesión para gestionar tus redes sociales.' : 'Comienza a automatizar tu contenido hoy mismo.'}
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        {error && (
+          <div className="mb-6 p-4 bg-rose-50 border border-rose-200 text-rose-600 rounded-xl text-sm font-medium">
+            {error}
+          </div>
+        )}
+
+        {message && (
+          <div className="mb-6 p-4 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-xl text-sm font-medium">
+            {message}
+          </div>
+        )}
+
+        <form onSubmit={handleAuth} className="space-y-5">
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest ml-4">Email</label>
+            <label className="text-sm font-bold text-slate-700">Correo Electrónico</label>
             <input 
               type="email" 
-              required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-6 py-4 bg-surface-container-low border-none rounded-3xl focus:ring-2 focus:ring-primary/20 transition-all font-semibold"
-              placeholder="tu@email.com"
+              required
+              className="w-full px-4 py-3 bg-surface-container-low border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+              placeholder="tu@empresa.com"
             />
           </div>
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest ml-4">Contraseña</label>
+            <label className="text-sm font-bold text-slate-700">Contraseña</label>
             <input 
               type="password" 
-              required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-6 py-4 bg-surface-container-low border-none rounded-3xl focus:ring-2 focus:ring-primary/20 transition-all font-semibold"
-              placeholder="********"
+              required
+              className="w-full px-4 py-3 bg-surface-container-low border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+              placeholder="••••••••"
             />
           </div>
 
           <button 
-            type="submit"
+            type="submit" 
             disabled={loading}
-            className="w-full py-5 bg-primary text-white rounded-3xl font-black text-lg hover:translate-y-[-2px] transition-all shadow-xl shadow-primary/20 disabled:opacity-50"
+            className="w-full py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            {loading ? 'Procesando...' : isLogin ? 'Entrar' : 'Crear Cuenta'}
+            {loading ? 'Procesando...' : (isLogin ? 'Iniciar Sesión' : 'Registrarse')}
           </button>
         </form>
 
-        <p className="text-center mt-8 text-sm font-bold text-slate-500">
-          {isLogin ? '¿No tienes cuenta?' : '¿Ya tienes cuenta?'}
+        <div className="mt-6 text-center">
           <button 
             onClick={() => setIsLogin(!isLogin)}
-            className="ml-2 text-primary hover:underline"
+            className="text-sm font-bold text-primary hover:underline"
           >
-            {isLogin ? 'Regístrate' : 'Inicia Sesión'}
+            {isLogin ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}
           </button>
-        </p>
+        </div>
       </motion.div>
     </div>
   );

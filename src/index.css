@@ -73,7 +73,6 @@
   }
   .ghost-border {
     outline: 1px solid rgba(200, 196, 215, 0.2);
-    border: 1px solid rgba(200, 196, 215, 0.2);
   }
   .no-scrollbar::-webkit-scrollbar {
     display: none;

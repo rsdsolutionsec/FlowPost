@@ -1,10 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { processScheduledPosts } from '../src/lib/scheduler';
 
-/**
- * Handler de la API /api/publish
- * Dispara el proceso de publicación de posts programados.
- */
 export default async function handler(
   request: VercelRequest,
   response: VercelResponse
@@ -12,9 +8,6 @@ export default async function handler(
   const now = new Date().toISOString();
   console.log(`[Cron Job] Execution started at ${now}`);
 
-  // 1. Validate Secret 
-  // Vercel Cron Jobs send "Authorization: Bearer <CRON_SECRET>" by default
-  // But we also support ?secret=CRON_SECRET as requested
   const authHeader = request.headers.authorization;
   const querySecret = request.query.secret;
   const secretKey = process.env.CRON_SECRET;

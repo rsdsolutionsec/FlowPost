@@ -1,9 +1,8 @@
-import { defineConfig, loadEnv } from 'vite';
-import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
 import path from 'path';
+import {defineConfig, loadEnv} from 'vite';
 
-// https://vitejs.dev/config/
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
@@ -13,16 +12,11 @@ export default defineConfig(({mode}) => {
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        '@': path.resolve(__dirname, '.'),
       },
     },
-    build: {
-      outDir: 'dist',
-      sourcemap: true,
-    },
     server: {
-      port: 3000,
-      host: true,
+      hmr: process.env.DISABLE_HMR !== 'true',
     },
   };
 });

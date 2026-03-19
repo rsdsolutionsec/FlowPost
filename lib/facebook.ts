@@ -5,6 +5,13 @@
 
 const META_GRAPH_VERSION = 'v19.0';
 /**
+ * Publica una foto con una leyenda en una pgina de Facebook usando contenido binario.
+ * 
+ * @param imageContent Buffer o Blob de la imagen a publicar.
+ * @param caption Texto que acompaar a la foto.
+ * @returns Un objeto con el ID del post o un error.
+ */
+/**
  * Publica una foto o video con una leyenda en una página de Facebook usando contenido binario.
  * 
  * @param mediaContent Buffer o Blob del medio a publicar.
@@ -32,10 +39,21 @@ export async function publishToFacebook(
 
   try {
     const formData = new FormData();
-    // Convertimos a Blob si es Buffer, para compatibilidad con Fetch nativo
-    const blob = mediaContent instanceof Blob ? mediaContent : new Blob([mediaContent as any]);
+    const filename = mediaType === 'video' ? 'video.mp4' : 'photo.jpg';
     
-    formData.append('source', blob);
+    // Convertimos a Blob y nos aseguramos de que tenga un tipo si es posible
+    let blob = mediaContent instanceof Blob ? mediaContent : new Blob([mediaContent as any]);
+    
+    // Forzamos el tipo si es video y está vacío
+    if (mediaType === 'video' && (!blob.type || blob.type === 'application/octet-stream')) {
+      blob = new Blob([blob], { type: 'video/mp4' });
+    } else if (mediaType === 'image' && (!blob.type || blob.type === 'application/octet-stream')) {
+      blob = new Blob([blob], { type: 'image/jpeg' });
+    }
+
+    console.log(`[Facebook] Preparando ${mediaType} para subir. Size: ${blob.size}, Type: ${blob.type}, Filename: ${filename}`);
+    
+    formData.append('source', blob, filename);
     formData.append(captionParam, caption);
 
     const response = await fetch(url, {

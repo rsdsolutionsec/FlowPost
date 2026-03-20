@@ -233,21 +233,47 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
             setSelectedLibraryFile(prefill.mediaUrl);
             setSelectedLibraryFileName(prefill.mediaFileName || prefill.mediaUrl.split('/').pop() || 'media');
           }
-          // Auto-resolve from library by filename if a relative path is given
+          // Auto-resolve from library by filename and path if provided
           if (prefill.mediaPath && !prefill.mediaUrl) {
-            const fileName = prefill.mediaPath.split('/').pop();
+            const parts = prefill.mediaPath.split('/');
+            const fileName = parts.pop();
+            const hasFolder = parts.length > 0;
+            
             if (fileName && user) {
-              const { data: mediaMatch } = await supabase
-                .from('media')
-                .select('url, name')
-                .eq('user_id', user.id)
-                .ilike('name', fileName)
-                .limit(1)
-                .single();
-              if (mediaMatch?.url) {
+              let foundMatch = null;
+              
+              if (hasFolder) {
+                let expectedDbPath = parts.join('/');
+                if (!expectedDbPath.startsWith('root')) {
+                  expectedDbPath = `root/${expectedDbPath}`;
+                }
+                const { data: exactMatch } = await supabase
+                  .from('media')
+                  .select('url, name')
+                  .eq('user_id', user.id)
+                  .ilike('name', fileName)
+                  .ilike('path', expectedDbPath)
+                  .limit(1)
+                  .single();
+                  
+                if (exactMatch?.url) foundMatch = exactMatch;
+              }
+
+              if (!foundMatch) {
+                const { data: fallbackMatch } = await supabase
+                  .from('media')
+                  .select('url, name')
+                  .eq('user_id', user.id)
+                  .ilike('name', fileName)
+                  .limit(1)
+                  .single();
+                if (fallbackMatch?.url) foundMatch = fallbackMatch;
+              }
+              
+              if (foundMatch?.url) {
                 setImageSource('library');
-                setSelectedLibraryFile(mediaMatch.url);
-                setSelectedLibraryFileName(mediaMatch.name);
+                setSelectedLibraryFile(foundMatch.url);
+                setSelectedLibraryFileName(foundMatch.name);
               }
             }
           }

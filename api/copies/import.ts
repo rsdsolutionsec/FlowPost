@@ -38,6 +38,7 @@ export default async function handler(
       const content = item.content?.trim();
       const suggested_at = item.suggested_at || null;
       const media_path = item.media_path?.trim() || null;
+      const platform = item.platform || 'facebook';
 
       if (!content) {
         failedCount++;
@@ -50,7 +51,8 @@ export default async function handler(
         name,
         content,
         suggested_at,
-        media_path
+        media_path,
+        platform
       };
     }).filter(Boolean);
 

@@ -7,6 +7,7 @@ interface ParsedCopy {
   content: string;
   suggested_at?: string | null;
   media_path?: string | null;
+  platform?: string | null;
   status?: 'pending' | 'success' | 'error';
   error?: string;
 }
@@ -73,11 +74,35 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
           });
         }
       } else {
+        // TXT format: Platform|Name|Content|Date|Path
+        // Platform can be: I (Instagram), F (Facebook), I/F (both)
+        const platformMap: Record<string, string> = {
+          'I': 'instagram',
+          'F': 'facebook',
+          'I/F': 'both',
+          'F/I': 'both',
+        };
         const lines = text.split(/\r?\n/).filter(l => l.trim());
         parsed = lines.map((line, i) => {
           const parts = line.split('|');
-          if (parts.length >= 2) {
+          // If first part looks like a platform prefix (I, F, or I/F)
+          const firstPart = parts[0]?.trim().toUpperCase();
+          const isPlatformPrefix = firstPart === 'I' || firstPart === 'F' || firstPart === 'I/F' || firstPart === 'F/I';
+
+          if (isPlatformPrefix && parts.length >= 3) {
+            // New format: Platform|Name|Content|Date|Path
+            const platform = platformMap[firstPart] || 'facebook';
             return {
+              platform,
+              name: parts[1]?.trim() || `Imported TXT ${i + 1}`,
+              content: parts[2]?.trim() || '',
+              suggested_at: parts[3] ? parseDate(parts[3]) : null,
+              media_path: parts[4] ? parts[4].trim() : null
+            };
+          } else if (parts.length >= 2) {
+            // Legacy format: Name|Content|Date|Path
+            return {
+              platform: 'facebook', // default
               name: parts[0].trim(),
               content: parts[1].trim(),
               suggested_at: parts[2] ? parseDate(parts[2]) : null,
@@ -85,6 +110,7 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
             };
           }
           return {
+            platform: 'facebook',
             name: `Imported TXT ${i + 1}`,
             content: line.trim(),
             suggested_at: null,
@@ -176,7 +202,7 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
                         format === 'txt' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'
                       }`}
                     >
-                      TXT (Name | Content | Date | Path)
+                      TXT (I/F | Name | Content | Date | Path)
                     </button>
                   </div>
 
@@ -214,6 +240,7 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
                         <table className="w-full text-left text-[10px]">
                           <thead className="bg-slate-50 sticky top-0">
                             <tr>
+                          <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">Plat.</th>
                               <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">Nombre</th>
                               <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">Contenido</th>
                               <th className="px-4 py-3 font-black text-slate-400 uppercase tracking-widest">Sugerido</th>
@@ -223,6 +250,13 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
                           <tbody className="divide-y divide-slate-50">
                             {preview.slice(0, 50).map((p, i) => (
                               <tr key={i}>
+                                <td className="px-4 py-3">
+                                  <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                                    p.platform === 'both' ? 'bg-purple-100 text-purple-600' :
+                                    p.platform === 'instagram' ? 'bg-pink-100 text-pink-600' :
+                                    'bg-blue-100 text-blue-600'
+                                  }`}>{p.platform === 'both' ? 'FB+IG' : p.platform === 'instagram' ? 'IG' : 'FB'}</span>
+                                </td>
                                 <td className="px-4 py-3 text-slate-900 font-bold truncate max-w-[100px]">{p.name}</td>
                                 <td className="px-4 py-3 text-slate-500 truncate max-w-[150px]">{p.content}</td>
                                 <td className="px-4 py-3 text-slate-400 font-medium whitespace-nowrap">

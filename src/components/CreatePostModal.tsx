@@ -26,6 +26,15 @@ interface CreatePostModalProps {
   prefill?: PrefillData;
 }
 
+interface UserSettings {
+  whatsapp_enabled: boolean;
+  whatsapp_number: string;
+  email_enabled: boolean;
+  email_address: string;
+  website_enabled: boolean;
+  website_url: string;
+}
+
 // Helper to sanitize paths (Supabase Storage is picky with special chars like ñ or spaces)
 const sanitizePath = (name: string) => {
   return name
@@ -149,21 +158,25 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const [selectedCopyId, setSelectedCopyId] = useState<string>('');
   const [useReusableCopy, setUseReusableCopy] = useState(false);
+  const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
+  const [includeSignature, setIncludeSignature] = useState(true);
+  const [publishToFacebook, setPublishToFacebook] = useState(true);
+  const [publishToInstagram, setPublishToInstagram] = useState(false);
   const [formData, setFormData] = useState({
     caption: '',
     scheduled_at: '',
-    platform: 'facebook',
   });
 
   // Fetch initial base data (Pages, Campaigns, Copies, Root Library)
   useEffect(() => {
     if (isOpen && user) {
       const fetchData = async () => {
-        const [pagesRes, igRes, campaignsRes, copiesRes] = await Promise.all([
+        const [pagesRes, igRes, campaignsRes, copiesRes, settingsRes] = await Promise.all([
           supabase.from('facebook_pages').select('id, page_name').eq('is_active', true).eq('user_id', user.id),
           supabase.from('instagram_accounts').select('id, username').eq('is_active', true).eq('user_id', user.id),
           supabase.from('campaigns').select('id, name').eq('user_id', user.id),
-          supabase.from('copies').select('id, name').eq('user_id', user.id)
+          supabase.from('copies').select('id, name').eq('user_id', user.id),
+          supabase.from('user_settings').select('*').eq('user_id', user.id).single()
         ]);
         
         if (pagesRes.data) {
@@ -180,11 +193,19 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
         if (copiesRes.data) {
           setCopies(copiesRes.data as LibraryCopy[]);
         }
+        if (settingsRes.data) {
+          setUserSettings(settingsRes.data as UserSettings);
+          // If no signature info is enabled, don't show the toggle or at least default it based on settings
+          const hasAnyEnabled = settingsRes.data.whatsapp_enabled || settingsRes.data.email_enabled || settingsRes.data.website_enabled;
+          setIncludeSignature(hasAnyEnabled);
+        }
 
         // Apply prefill data after loading
         if (prefill) {
-          setUseReusableCopy(true);
-          setSelectedCopyId(prefill.copyId);
+          if (prefill.copyId) {
+            setUseReusableCopy(true);
+            setSelectedCopyId(prefill.copyId);
+          }
           if (prefill.scheduledAt) {
             const d = new Date(prefill.scheduledAt);
             const offset = d.getTimezoneOffset() * 60000;
@@ -193,7 +214,9 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
           }
 
           if (prefill.platform) {
-            setFormData(prev => ({ ...prev, platform: prefill.platform || 'facebook' }));
+            const pl = prefill.platform || 'facebook';
+            setPublishToFacebook(pl === 'facebook' || pl === 'both');
+            setPublishToInstagram(pl === 'instagram' || pl === 'both');
           }
 
           if (prefill.caption) {
@@ -204,42 +227,6 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
           if (prefill.instagramAccountId) setSelectedInstagramId(prefill.instagramAccountId);
           if (prefill.campaignId) setSelectedCampaignId(prefill.campaignId);
 
-          // Auto-select media: if direct URL provided, use it immediately
-          if (prefill.mediaUrl) {
-            setImageSource('library');
-            setSelectedLibraryFile(prefill.mediaUrl || '');
-            setSelectedLibraryFileName(prefill.mediaFileName || prefill.mediaUrl.split('/').pop() || 'media');
-          }
-          // Auto-resolve from library by filename if a relative path is given
-          if (prefill.mediaPath && !prefill.mediaUrl) {
-            const fileName = prefill.mediaPath.split('/').pop();
-            if (fileName && user) {
-              const { data: mediaMatch } = await supabase
-                .from('media')
-                .select('url, name')
-                .eq('user_id', user.id)
-                .ilike('name', fileName)
-                .limit(1)
-                .single();
-              if (mediaMatch?.url) {
-                setImageSource('library');
-                setSelectedLibraryFile(mediaMatch.url);
-                setSelectedLibraryFileName(mediaMatch.name);
-              }
-            }
-          }
-        }
-
-        // Apply prefill data after loading
-        if (prefill) {
-          setUseReusableCopy(true);
-          setSelectedCopyId(prefill.copyId);
-          if (prefill.scheduledAt) {
-            const d = new Date(prefill.scheduledAt);
-            const offset = d.getTimezoneOffset() * 60000;
-            const local = new Date(d.getTime() - offset).toISOString().slice(0, 16);
-            setFormData(prev => ({ ...prev, scheduled_at: local }));
-          }
           // Auto-select media: if direct URL provided, use it immediately
           if (prefill.mediaUrl) {
             setImageSource('library');
@@ -332,13 +319,61 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
     setMediaCurrentFolder(parts.join('/'));
   };
 
+  const getContactSignature = () => {
+    if (!userSettings) return '';
+    const enabled = [];
+    if (userSettings.whatsapp_enabled && userSettings.whatsapp_number) enabled.push('whatsapp');
+    if (userSettings.email_enabled && userSettings.email_address) enabled.push('email');
+    if (userSettings.website_enabled && userSettings.website_url) enabled.push('website');
+
+    if (enabled.length === 0) return '';
+
+    if (enabled.length === 1) {
+      if (enabled[0] === 'whatsapp') {
+        const cleanNumber = userSettings.whatsapp_number.replace(/\D/g, '');
+        return `📲 Escríbenos por WhatsApp:\nhttps://wa.me/${cleanNumber}`;
+      }
+      if (enabled[0] === 'email') {
+        return `📧 Correo:\n${userSettings.email_address}`;
+      }
+      if (enabled[0] === 'website') {
+        return `🌐 Página web:\n${userSettings.website_url}`;
+      }
+    }
+
+    // Multiple
+    const lines = [];
+    if (userSettings.whatsapp_enabled && userSettings.whatsapp_number) {
+      const cleanNumber = userSettings.whatsapp_number.replace(/\D/g, '');
+      lines.push(`📲 WhatsApp:\nhttps://wa.me/${cleanNumber}`);
+    }
+    if (userSettings.email_enabled && userSettings.email_address) {
+      lines.push(`📧 Correo:\n${userSettings.email_address}`);
+    }
+    if (userSettings.website_enabled && userSettings.website_url) {
+      lines.push(`🌐 Página web:\n${userSettings.website_url}`);
+    }
+    return lines.join('\n\n');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const selectedTarget = formData.platform === 'facebook' ? selectedPageId : selectedInstagramId;
+    if (!publishToFacebook && !publishToInstagram) {
+      alert('Por favor selecciona al menos una red social (Facebook o Instagram)');
+      return;
+    }
+    if (publishToFacebook && !selectedPageId) {
+      alert('Por favor selecciona una Página de Facebook');
+      return;
+    }
+    if (publishToInstagram && !selectedInstagramId) {
+      alert('Por favor selecciona una Cuenta de Instagram');
+      return;
+    }
     const isValidMedia = (imageSource === 'upload' && imageFile) || (imageSource === 'library' && selectedLibraryFile);
-    if (!user || !isValidMedia || !selectedTarget) {
-      alert(`Por favor selecciona una imagen y una ${formData.platform === 'facebook' ? 'página' : 'cuenta'} de destino`);
+    if (!user || !isValidMedia) {
+      alert('Por favor selecciona una imagen o video');
       return;
     }
 
@@ -390,28 +425,59 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
       }
 
       // 2. Insert or Update in the tabla posts
-      const postData = {
+      // Append signature to caption if requested
+      let finalCaption = formData.caption;
+      if (includeSignature && !useReusableCopy) {
+        const signature = getContactSignature();
+        if (signature && !finalCaption.includes(signature)) {
+          finalCaption = finalCaption.trim() + '\n\n' + signature;
+        }
+      }
+
+      const basePostData = {
         user_id: user.id,
-        facebook_page_id: formData.platform === 'facebook' ? selectedPageId : null,
-        instagram_account_id: formData.platform === 'instagram' ? selectedInstagramId : null,
         campaign_id: selectedCampaignId || null,
         copy_id: useReusableCopy ? selectedCopyId : null,
-        custom_caption: useReusableCopy ? null : formData.caption,
-        caption: useReusableCopy ? null : formData.caption, // Fallback for legacy
+        custom_caption: useReusableCopy ? null : finalCaption,
+        caption: useReusableCopy ? null : finalCaption,
         image_path: filePath,
         scheduled_at: new Date(formData.scheduled_at).toISOString(),
-        platform: formData.platform,
         status: prefill?.editId ? (prefill.status || 'scheduled') : (prefill ? 'pending' : 'scheduled'),
       };
 
       if (prefill?.editId) {
+        // On edit, update only the first existing post (single platform, keep existing)
+        const editPlatform = publishToFacebook ? 'facebook' : 'instagram';
         const { error } = await supabase
           .from('posts')
-          .update(postData)
+          .update({
+            ...basePostData,
+            facebook_page_id: publishToFacebook ? selectedPageId : null,
+            instagram_account_id: publishToInstagram ? selectedInstagramId : null,
+            platform: editPlatform,
+          })
           .eq('id', prefill.editId);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('posts').insert([postData]);
+        // Build list of posts to insert (one per selected platform)
+        const postsToInsert = [];
+        if (publishToFacebook) {
+          postsToInsert.push({
+            ...basePostData,
+            facebook_page_id: selectedPageId,
+            instagram_account_id: null,
+            platform: 'facebook',
+          });
+        }
+        if (publishToInstagram) {
+          postsToInsert.push({
+            ...basePostData,
+            facebook_page_id: null,
+            instagram_account_id: selectedInstagramId,
+            platform: 'instagram',
+          });
+        }
+        const { error } = await supabase.from('posts').insert(postsToInsert);
         if (error) throw error;
       }
       
@@ -419,7 +485,9 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
       onClose();
       
       // Reset state
-      setFormData({ caption: '', scheduled_at: '', platform: 'facebook' });
+      setFormData({ caption: '', scheduled_at: '' });
+      setPublishToFacebook(true);
+      setPublishToInstagram(false);
       setImageFile(null);
       setSelectedCopyId('');
       setUseReusableCopy(false);
@@ -481,54 +549,89 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
               )}
 
               <form id="create-post-form" onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest text-wrap">
-                      Destino: {formData.platform === 'facebook' ? 'Página FB' : 'Cuenta IG'}
-                    </label>
-                    {formData.platform === 'facebook' ? (
-                      pages.length > 0 ? (
+                {/* Platform + Destination + Campaign */}
+                <div className="space-y-3 p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Redes Sociales</label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPublishToFacebook(!publishToFacebook)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                          publishToFacebook
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                            : 'bg-white text-slate-400 border-slate-200 hover:border-blue-300'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-sm">thumb_up</span>
+                        Facebook
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPublishToInstagram(!publishToInstagram)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                          publishToInstagram
+                            ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white border-pink-500 shadow-sm'
+                            : 'bg-white text-slate-400 border-slate-200 hover:border-pink-300'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-sm">photo_camera</span>
+                        Instagram
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Facebook page selector */}
+                  {publishToFacebook && (
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest">Página de Facebook</span>
+                      {pages.length > 0 ? (
                         <select
-                          required
                           value={selectedPageId}
                           onChange={(e) => setSelectedPageId(e.target.value)}
-                          className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm font-bold"
+                          className="w-full p-3 bg-white rounded-xl border border-blue-100 focus:ring-2 focus:ring-blue-200 text-on-surface text-sm font-bold"
                         >
                           {pages.map(page => (
                             <option key={page.id} value={page.id}>{page.page_name}</option>
                           ))}
                         </select>
                       ) : (
-                        <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl text-[10px] font-bold border border-rose-100 flex items-center gap-2">
-                          <span>No hay páginas</span>
+                        <div className="p-3 bg-rose-50 text-rose-600 rounded-xl text-[10px] font-bold border border-rose-100">
+                          No hay páginas de Facebook conectadas
                         </div>
-                      )
-                    ) : (
-                      instagramAccounts.length > 0 ? (
+                      )}
+                    </div>
+                  )}
+
+                  {/* Instagram account selector */}
+                  {publishToInstagram && (
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-black text-pink-500 uppercase tracking-widest">Cuenta de Instagram</span>
+                      {instagramAccounts.length > 0 ? (
                         <select
-                          required
                           value={selectedInstagramId}
                           onChange={(e) => setSelectedInstagramId(e.target.value)}
-                          className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm font-bold"
+                          className="w-full p-3 bg-white rounded-xl border border-pink-100 focus:ring-2 focus:ring-pink-200 text-on-surface text-sm font-bold"
                         >
                           {instagramAccounts.map(ig => (
                             <option key={ig.id} value={ig.id}>@{ig.username}</option>
                           ))}
                         </select>
                       ) : (
-                        <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl text-[10px] font-bold border border-rose-100 flex items-center gap-2">
-                          <span>No hay IG</span>
+                        <div className="p-3 bg-rose-50 text-rose-600 rounded-xl text-[10px] font-bold border border-rose-100">
+                          No hay cuentas de Instagram conectadas
                         </div>
-                      )
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
 
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Campaña (Op)</label>
+                  {/* Campaign */}
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Campaña (Opcional)</span>
                     <select
                       value={selectedCampaignId}
                       onChange={(e) => setSelectedCampaignId(e.target.value)}
-                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm font-bold"
+                      className="w-full p-3 bg-white rounded-xl border border-slate-100 focus:ring-2 focus:ring-primary/20 text-on-surface text-sm font-bold"
                     >
                       <option value="">Sin Campaña</option>
                       {campaigns.map(c => (
@@ -580,6 +683,23 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
                       className="w-full p-4 bg-white rounded-2xl border-none focus:ring-2 focus:ring-primary/20 min-h-[100px] text-on-surface text-sm font-medium shadow-sm leading-relaxed animate-in fade-in slide-in-from-top-1 duration-300"
                       placeholder="Escribe algo increíble para tu audiencia..."
                     />
+                  )}
+
+                  {/* Contact Information Toggle */}
+                  {userSettings && (userSettings.whatsapp_enabled || userSettings.email_enabled || userSettings.website_enabled) && (
+                    <div className="flex items-center justify-between px-2 pt-2 border-t border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-sm text-slate-400">contact_support</span>
+                        <span className="text-[10px] font-bold text-slate-500">Incluir info de contacto</span>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => setIncludeSignature(!includeSignature)}
+                        className={`w-10 h-5 rounded-full transition-colors relative ${includeSignature ? 'bg-indigo-500' : 'bg-slate-300'}`}
+                      >
+                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${includeSignature ? 'left-6' : 'left-1'}`}></div>
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -712,28 +832,15 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Programar</label>
-                    <input
-                      type="datetime-local"
-                      required
-                      value={formData.scheduled_at}
-                      onChange={(e) => setFormData({ ...formData, scheduled_at: e.target.value })}
-                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-xs font-bold"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Red</label>
-                    <select
-                      value={formData.platform}
-                      onChange={(e) => setFormData({ ...formData, platform: e.target.value })}
-                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-xs font-bold"
-                    >
-                      <option value="facebook">Facebook</option>
-                      <option value="instagram">Instagram</option>
-                    </select>
-                  </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Programar para</label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={formData.scheduled_at}
+                    onChange={(e) => setFormData({ ...formData, scheduled_at: e.target.value })}
+                    className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-xs font-bold"
+                  />
                 </div>
               </form>
             </div>

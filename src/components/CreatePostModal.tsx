@@ -3,10 +3,27 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
+interface PrefillData {
+  copyId?: string;
+  copyName?: string;
+  scheduledAt?: string;    // ISO string from suggested_at
+  mediaUrl?: string;       // direct R2 public URL (http)
+  mediaPath?: string;      // relative path like 'campana_vistas/vista_mesero/2.PNG'
+  mediaFileName?: string;  // display name
+  editId?: string;         // If present, we are editing this post
+  status?: string;         // original status
+  platform?: string;       // original platform
+  facebookPageId?: string;
+  instagramAccountId?: string;
+  campaignId?: string;
+  caption?: string;
+}
+
 interface CreatePostModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  prefill?: PrefillData;
 }
 
 // Helper to sanitize paths (Supabase Storage is picky with special chars like ñ or spaces)
@@ -18,7 +35,15 @@ const sanitizePath = (name: string) => {
     .replace(/_{2,}/g, '_'); // Collapse multiple underscores
 };
 
-const ImagePreview: React.FC<{ path: string; fileName: string; selected: boolean; onClick: () => void; isFolder?: boolean }> = ({ path, fileName, selected, onClick, isFolder }) => {
+interface ImagePreviewProps {
+  path: string;
+  fileName: string;
+  selected: boolean;
+  onClick: () => void;
+  isFolder?: boolean;
+}
+
+const ImagePreview: React.FC<ImagePreviewProps> = ({ path, fileName, selected, onClick, isFolder }) => {
   const [url, setUrl] = useState<string>('');
   const [loading, setLoading] = useState(!isFolder);
 
@@ -96,7 +121,13 @@ const ImagePreview: React.FC<{ path: string; fileName: string; selected: boolean
   );
 }
 
-export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePostModalProps) {
+interface Page { id: string; page_name: string; }
+interface InstagramAccount { id: string; username: string; }
+interface Campaign { id: string; name: string; }
+interface LibraryCopy { id: string; name: string; }
+interface MediaItem { id: string; name: string; url: string; mimetype: string; path: string; size: number; }
+
+export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }: CreatePostModalProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -105,15 +136,17 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
   const [imageSource, setImageSource] = useState<'upload' | 'library'>('upload');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string>('');
-  const [libraryItems, setLibraryItems] = useState<any[]>([]);
+  const [libraryItems, setLibraryItems] = useState<MediaItem[]>([]);
   const [selectedLibraryFile, setSelectedLibraryFile] = useState<string>(''); // Full url selected
   const [selectedLibraryFileName, setSelectedLibraryFileName] = useState<string>('');
   const [mediaCurrentFolder, setMediaCurrentFolder] = useState<string>('');
 
-  const [pages, setPages] = useState<any[]>([]);
-  const [campaigns, setCampaigns] = useState<any[]>([]);
-  const [copies, setCopies] = useState<any[]>([]);
+  const [pages, setPages] = useState<Page[]>([]);
+  const [instagramAccounts, setInstagramAccounts] = useState<InstagramAccount[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [copies, setCopies] = useState<LibraryCopy[]>([]);
   const [selectedPageId, setSelectedPageId] = useState<string>('');
+  const [selectedInstagramId, setSelectedInstagramId] = useState<string>('');
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
   const [selectedCopyId, setSelectedCopyId] = useState<string>('');
   const [useReusableCopy, setUseReusableCopy] = useState(false);
@@ -127,21 +160,75 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
   useEffect(() => {
     if (isOpen && user) {
       const fetchData = async () => {
-        const [pagesRes, campaignsRes, copiesRes] = await Promise.all([
+        const [pagesRes, igRes, campaignsRes, copiesRes] = await Promise.all([
           supabase.from('facebook_pages').select('id, page_name').eq('is_active', true).eq('user_id', user.id),
+          supabase.from('instagram_accounts').select('id, username').eq('is_active', true).eq('user_id', user.id),
           supabase.from('campaigns').select('id, name').eq('user_id', user.id),
           supabase.from('copies').select('id, name').eq('user_id', user.id)
         ]);
         
         if (pagesRes.data) {
-          setPages(pagesRes.data);
+          setPages(pagesRes.data as Page[]);
           if (pagesRes.data.length > 0) setSelectedPageId(pagesRes.data[0].id);
         }
+        if (igRes.data) {
+          setInstagramAccounts(igRes.data as InstagramAccount[]);
+          if (igRes.data.length > 0) setSelectedInstagramId(igRes.data[0].id);
+        }
         if (campaignsRes.data) {
-          setCampaigns(campaignsRes.data);
+          setCampaigns(campaignsRes.data as Campaign[]);
         }
         if (copiesRes.data) {
-          setCopies(copiesRes.data);
+          setCopies(copiesRes.data as LibraryCopy[]);
+        }
+
+        // Apply prefill data after loading
+        if (prefill) {
+          setUseReusableCopy(true);
+          setSelectedCopyId(prefill.copyId);
+          if (prefill.scheduledAt) {
+            const d = new Date(prefill.scheduledAt);
+            const offset = d.getTimezoneOffset() * 60000;
+            const local = new Date(d.getTime() - offset).toISOString().slice(0, 16);
+            setFormData(prev => ({ ...prev, scheduled_at: local }));
+          }
+
+          if (prefill.platform) {
+            setFormData(prev => ({ ...prev, platform: prefill.platform || 'facebook' }));
+          }
+
+          if (prefill.caption) {
+            setFormData(prev => ({ ...prev, caption: prefill.caption || '' }));
+          }
+
+          if (prefill.facebookPageId) setSelectedPageId(prefill.facebookPageId);
+          if (prefill.instagramAccountId) setSelectedInstagramId(prefill.instagramAccountId);
+          if (prefill.campaignId) setSelectedCampaignId(prefill.campaignId);
+
+          // Auto-select media: if direct URL provided, use it immediately
+          if (prefill.mediaUrl) {
+            setImageSource('library');
+            setSelectedLibraryFile(prefill.mediaUrl || '');
+            setSelectedLibraryFileName(prefill.mediaFileName || prefill.mediaUrl.split('/').pop() || 'media');
+          }
+          // Auto-resolve from library by filename if a relative path is given
+          if (prefill.mediaPath && !prefill.mediaUrl) {
+            const fileName = prefill.mediaPath.split('/').pop();
+            if (fileName && user) {
+              const { data: mediaMatch } = await supabase
+                .from('media')
+                .select('url, name')
+                .eq('user_id', user.id)
+                .ilike('name', fileName)
+                .limit(1)
+                .single();
+              if (mediaMatch?.url) {
+                setImageSource('library');
+                setSelectedLibraryFile(mediaMatch.url);
+                setSelectedLibraryFileName(mediaMatch.name);
+              }
+            }
+          }
         }
       };
       fetchData();
@@ -161,7 +248,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
           .order('created_at', { ascending: false });
         
         if (!error && data) {
-          setLibraryItems(data);
+          setLibraryItems(data as MediaItem[]);
         }
       };
       fetchLibraryMedia();
@@ -185,7 +272,7 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
     }
   };
 
-  const handleItemClick = (item: any) => {
+  const handleItemClick = (item: MediaItem) => {
     if (item.mimetype === 'folder') {
        // Is a folder
        setMediaCurrentFolder(mediaCurrentFolder ? `${mediaCurrentFolder}/${item.name}` : item.name);
@@ -213,9 +300,10 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    const selectedTarget = formData.platform === 'facebook' ? selectedPageId : selectedInstagramId;
     const isValidMedia = (imageSource === 'upload' && imageFile) || (imageSource === 'library' && selectedLibraryFile);
-    if (!user || !isValidMedia || !selectedPageId) {
-      alert('Por favor selecciona una imagen y una página de destino');
+    if (!user || !isValidMedia || !selectedTarget) {
+      alert(`Por favor selecciona una imagen y una ${formData.platform === 'facebook' ? 'página' : 'cuenta'} de destino`);
       return;
     }
 
@@ -266,23 +354,31 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
         filePath = selectedLibraryFile;
       }
 
-      // 2. Insertar en la tabla posts
-      const { error } = await supabase.from('posts').insert([
-        {
-          user_id: user.id,
-          facebook_page_id: selectedPageId,
-          campaign_id: selectedCampaignId || null,
-          copy_id: useReusableCopy ? selectedCopyId : null,
-          custom_caption: useReusableCopy ? null : formData.caption,
-          caption: useReusableCopy ? null : formData.caption, // Fallback for legacy
-          image_path: filePath,
-          scheduled_at: new Date(formData.scheduled_at).toISOString(),
-          platform: formData.platform,
-          status: 'scheduled',
-        },
-      ]);
+      // 2. Insert or Update in the tabla posts
+      const postData = {
+        user_id: user.id,
+        facebook_page_id: formData.platform === 'facebook' ? selectedPageId : null,
+        instagram_account_id: formData.platform === 'instagram' ? selectedInstagramId : null,
+        campaign_id: selectedCampaignId || null,
+        copy_id: useReusableCopy ? selectedCopyId : null,
+        custom_caption: useReusableCopy ? null : formData.caption,
+        caption: useReusableCopy ? null : formData.caption, // Fallback for legacy
+        image_path: filePath,
+        scheduled_at: new Date(formData.scheduled_at).toISOString(),
+        platform: formData.platform,
+        status: prefill?.editId ? (prefill.status || 'scheduled') : (prefill ? 'pending' : 'scheduled'),
+      };
 
-      if (error) throw error;
+      if (prefill?.editId) {
+        const { error } = await supabase
+          .from('posts')
+          .update(postData)
+          .eq('id', prefill.editId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('posts').insert([postData]);
+        if (error) throw error;
+      }
       
       onSuccess();
       onClose();
@@ -328,32 +424,67 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
           >
             <div className="p-8 space-y-6 overflow-y-auto">
               <div className="flex justify-between items-center">
-                <h3 className="text-2xl font-extrabold text-on-surface font-headline">Crear Nueva Publicación</h3>
+                <h3 className="text-2xl font-extrabold text-on-surface font-headline">
+                  {prefill?.editId ? 'Editar Publicación' : prefill ? 'Programar desde Copy' : 'Crear Nueva Publicación'}
+                </h3>
                 <button onClick={onClose} className="p-2 hover:bg-surface-container-low rounded-full transition-colors">
                   <span className="material-symbols-outlined">close</span>
                 </button>
               </div>
 
+              {/* Prefill banner */}
+              {prefill && (
+                <div className="flex items-start gap-3 p-4 bg-indigo-50 border border-indigo-100 rounded-2xl">
+                  <span className="material-symbols-outlined text-indigo-500 text-[20px] mt-0.5">auto_awesome</span>
+                  <div>
+                    <p className="text-xs font-black text-indigo-700 uppercase tracking-widest">Pre-configurado desde Copy</p>
+                    <p className="text-xs text-indigo-500 font-medium mt-0.5">
+                      <strong>{prefill.copyName}</strong> · Revisa y completa los datos antes de guardar como pendiente.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <form id="create-post-form" onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Publicar en Página</label>
-                    {pages.length > 0 ? (
-                      <select
-                        required
-                        value={selectedPageId}
-                        onChange={(e) => setSelectedPageId(e.target.value)}
-                        className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm font-bold"
-                      >
-                        {pages.map(page => (
-                          <option key={page.id} value={page.id}>{page.page_name}</option>
-                        ))}
-                      </select>
+                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest text-wrap">
+                      Destino: {formData.platform === 'facebook' ? 'Página FB' : 'Cuenta IG'}
+                    </label>
+                    {formData.platform === 'facebook' ? (
+                      pages.length > 0 ? (
+                        <select
+                          required
+                          value={selectedPageId}
+                          onChange={(e) => setSelectedPageId(e.target.value)}
+                          className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm font-bold"
+                        >
+                          {pages.map(page => (
+                            <option key={page.id} value={page.id}>{page.page_name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl text-[10px] font-bold border border-rose-100 flex items-center gap-2">
+                          <span>No hay páginas</span>
+                        </div>
+                      )
                     ) : (
-                      <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl text-xs font-bold border border-rose-100 flex items-center gap-2">
-                        <span className="material-symbols-outlined text-sm">warning</span>
-                        <span>No hay páginas conectadas.</span>
-                      </div>
+                      instagramAccounts.length > 0 ? (
+                        <select
+                          required
+                          value={selectedInstagramId}
+                          onChange={(e) => setSelectedInstagramId(e.target.value)}
+                          className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm font-bold"
+                        >
+                          {instagramAccounts.map(ig => (
+                            <option key={ig.id} value={ig.id}>@{ig.username}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl text-[10px] font-bold border border-rose-100 flex items-center gap-2">
+                          <span>No hay IG</span>
+                        </div>
+                      )
                     )}
                   </div>
 
@@ -577,10 +708,22 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess }: CreatePo
                 type="submit"
                 form="create-post-form"
                 disabled={loading}
-                className="w-full py-4 bg-primary text-white font-black text-sm uppercase tracking-widest rounded-2xl hover:translate-y-[-2px] hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                className={`w-full py-4 text-white font-black text-sm uppercase tracking-widest rounded-2xl hover:translate-y-[-2px] hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2 ${
+                  prefill ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' : 'bg-primary shadow-primary/20'
+                } shadow-xl`}
               >
                 {loading ? (
                   'Procesando...'
+                ) : prefill?.editId ? (
+                  <>
+                    <span className="material-symbols-outlined text-sm">save</span>
+                    <span>Guardar Cambios</span>
+                  </>
+                ) : prefill ? (
+                  <>
+                    <span className="material-symbols-outlined text-sm">pending_actions</span>
+                    <span>Guardar como Pendiente</span>
+                  </>
                 ) : (
                   <>
                     <span className="material-symbols-outlined text-sm">rocket_launch</span>

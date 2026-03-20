@@ -1,5 +1,6 @@
 import { supabaseAdmin } from './supabase.js';
 import { publishToFacebook } from './facebook.js';
+import { publishToInstagram } from './instagram.js';
 
 export async function processScheduledPosts() {
   const now = new Date().toISOString();
@@ -15,6 +16,12 @@ export async function processScheduledPosts() {
       facebook_pages (
         page_id,
         page_access_token
+      ),
+      instagram_accounts (
+        instagram_business_id,
+        facebook_pages (
+          page_access_token
+        )
       )
     `)
     .eq('status', 'scheduled')
@@ -40,7 +47,7 @@ export async function processScheduledPosts() {
       console.log(`[Scheduler] Procesando post ID: ${post.id}`);
 
       const resolvedCaption = post.copy_id && post.copies
-        ? post.copies.content
+        ? (post.copies as any).content
         : (post.custom_caption || post.caption || '');
 
       if (!resolvedCaption.trim()) {
@@ -48,53 +55,84 @@ export async function processScheduledPosts() {
       }
 
       if (!post.image_path) {
-        throw new Error('El post no tiene una ruta de imagen (image_path)');
+        throw new Error('El post no tiene una ruta de medio (image_path/media)');
       }
 
-      console.log(`[Scheduler] Descargando imagen: ${post.image_path}`);
-      let imageData: Blob;
+      // Limpiar y detectar tipo de medio
+      const mediaPath = post.image_path.trim();
+      const isVideo = /\.(mp4|mov|avi|wmv|flv|webm|mkv)$/i.test(mediaPath);
+      const mediaType = isVideo ? 'video' : 'image';
 
-      if (post.image_path.startsWith('http')) {
-        // Content from R2 via Public URL
-        const response = await fetch(post.image_path);
-        if (!response.ok) {
-          throw new Error(`Error al descargar imagen desde R2 (${response.status}): ${response.statusText}`);
+      const isInstagram = post.platform === 'instagram';
+      let result;
+
+      if (isInstagram) {
+        const igData = post.instagram_accounts;
+        if (!igData || !(igData as any).instagram_business_id) {
+          throw new Error('No se encontró el ID de Instagram Business para este post');
         }
-        imageData = await response.blob();
+        
+        const igToken = (igData as any).facebook_pages?.page_access_token;
+        if (!igToken) {
+          throw new Error('No se encontró el token de la página de Facebook vinculada a Instagram');
+        }
+
+        console.log(`[Scheduler] Enviando ${mediaType} a Instagram (${(igData as any).instagram_business_id})...`);
+        
+        // Instagram requiere URL pública. Si mediaPath es relativa, tenemos un problema.
+        if (!mediaPath.startsWith('http')) {
+           throw new Error('Instagram requiere una URL pública para el medio (R2). Las rutas relativas de Storage no son compatibles.');
+        }
+
+        result = await publishToInstagram(
+          mediaPath,
+          resolvedCaption,
+          (igData as any).instagram_business_id,
+          igToken,
+          mediaType
+        );
       } else {
-        // Content from Supabase Storage (Legacy)
-        const { data, error: downloadError } = await supabaseAdmin
-          .storage
-          .from('posts')
-          .download(post.image_path);
-
-        if (downloadError || !data) {
-          throw new Error(`Error al descargar imagen de Storage: ${downloadError?.message || 'Archivo no encontrado'}`);
+        const pageData = post.facebook_pages;
+        if (!pageData || !(pageData as any).page_id || !(pageData as any).page_access_token) {
+          throw new Error('No se encontraron credenciales de Facebook para este post (facebook_pages missing)');
         }
-        imageData = data;
-      }
 
-      const pageData = post.facebook_pages;
-      if (!pageData || !pageData.page_id || !pageData.page_access_token) {
-        throw new Error('No se encontraron credenciales de Facebook para este post (facebook_pages missing)');
-      }
+        console.log(`[Scheduler] Enviando ${mediaType} a Facebook (Page: ${(pageData as any).page_id})...`);
+        
+        // Facebook permite binarios, así que bajamos el contenido
+        let mediaData: Blob;
+        if (mediaPath.startsWith('http')) {
+          const response = await fetch(mediaPath);
+          if (!response.ok) throw new Error(`Error R2: ${response.statusText}`);
+          mediaData = await response.blob();
+        } else {
+          const { data, error: downloadError } = await supabaseAdmin.storage.from('posts').download(mediaPath);
+          if (downloadError || !data) throw new Error(`Error Storage: ${downloadError?.message}`);
+          mediaData = data;
+        }
 
-      console.log(`[Scheduler] Enviando binario a Facebook (Page: ${pageData.page_id})...`);
-      const result = await publishToFacebook(
-        imageData, 
-        resolvedCaption,
-        pageData.page_id,
-        pageData.page_access_token
-      );
+        result = await publishToFacebook(
+          mediaData, 
+          resolvedCaption,
+          (pageData as any).page_id,
+          (pageData as any).page_access_token,
+          mediaType
+        );
+      }
 
       if (result.success) {
+        const platformKey = isInstagram ? 'ig_post_id' : 'fb_post_id';
+        const platformTime = isInstagram ? 'ig_published_at' : 'fb_published_at';
+        
         const { error: updateError } = await supabaseAdmin
           .from('posts')
           .update({ 
             status: 'published',
             metadata: { 
-              fb_post_id: result.id,
-              fb_published_at: new Date().toISOString()
+              [platformKey]: result.id,
+              [platformTime]: new Date().toISOString(),
+              platform: post.platform,
+              media_type: mediaType
             }
           })
           .eq('id', post.id);
@@ -104,7 +142,7 @@ export async function processScheduledPosts() {
         }
         
         succeeded++;
-        console.log(`[Scheduler] Post ${post.id} publicado con éxito.`);
+        console.log(`[Scheduler] Post ${post.id} (${mediaType}) publicado con éxito.`);
       } else {
         await supabaseAdmin
           .from('posts')
@@ -112,7 +150,8 @@ export async function processScheduledPosts() {
             status: 'failed',
             metadata: { 
               error: result.error, 
-              failed_at: new Date().toISOString() 
+              failed_at: new Date().toISOString(),
+              media_type: mediaType
             }
           })
           .eq('id', post.id);

@@ -15,14 +15,28 @@ export default function CreateCopyModal({ isOpen, onClose, onSuccess, editCopy }
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState('');
   const [content, setContent] = useState('');
+  const [suggestedAt, setSuggestedAt] = useState('');
+  const [mediaPath, setMediaPath] = useState('');
 
   useEffect(() => {
     if (editCopy) {
       setName(editCopy.name);
       setContent(editCopy.content);
+      // Convert to local datetime-local format (YYYY-MM-DDTHH:mm)
+      if (editCopy.suggested_at) {
+        const d = new Date(editCopy.suggested_at);
+        const offset = d.getTimezoneOffset() * 60000;
+        const localISODate = new Date(d.getTime() - offset).toISOString().slice(0, 16);
+        setSuggestedAt(localISODate);
+      } else {
+        setSuggestedAt('');
+      }
+      setMediaPath(editCopy.media_path || '');
     } else {
       setName('');
       setContent('');
+      setSuggestedAt('');
+      setMediaPath('');
     }
   }, [editCopy, isOpen]);
 
@@ -35,12 +49,23 @@ export default function CreateCopyModal({ isOpen, onClose, onSuccess, editCopy }
       if (editCopy) {
         const { error } = await supabase
           .from('copies')
-          .update({ name, content })
+          .update({ 
+            name, 
+            content,
+            suggested_at: suggestedAt ? new Date(suggestedAt).toISOString() : null,
+            media_path: mediaPath || null
+          })
           .eq('id', editCopy.id);
         if (error) throw error;
       } else {
         const { error } = await supabase.from('copies').insert([
-          { user_id: user.id, name, content }
+          { 
+            user_id: user.id, 
+            name, 
+            content,
+            suggested_at: suggestedAt ? new Date(suggestedAt).toISOString() : null,
+            media_path: mediaPath || null
+          }
         ]);
         if (error) throw error;
       }
@@ -95,6 +120,24 @@ export default function CreateCopyModal({ isOpen, onClose, onSuccess, editCopy }
                   placeholder="Escribe el texto de tu post aquí..." 
                   className="w-full p-5 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary/20 min-h-[150px] text-sm resize-none font-medium"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase text-slate-400 px-1 tracking-widest">Fecha Sugerida</label>
+                  <input 
+                    type="datetime-local" value={suggestedAt} onChange={(e) => setSuggestedAt(e.target.value)}
+                    className="w-full p-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-xs font-bold"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase text-slate-400 px-1 tracking-widest">Media Path</label>
+                  <input 
+                    type="text" value={mediaPath} onChange={(e) => setMediaPath(e.target.value)}
+                    placeholder="folder/image.png"
+                    className="w-full p-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-xs font-bold"
+                  />
+                </div>
               </div>
 
               <div className="pt-4 flex gap-3">

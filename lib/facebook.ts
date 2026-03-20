@@ -11,25 +11,50 @@ const META_GRAPH_VERSION = 'v19.0';
  * @param caption Texto que acompaar a la foto.
  * @returns Un objeto con el ID del post o un error.
  */
+/**
+ * Publica una foto o video con una leyenda en una página de Facebook usando contenido binario.
+ * 
+ * @param mediaContent Buffer o Blob del medio a publicar.
+ * @param caption Texto que acompañará al medio.
+ * @param targetPageId ID de la página de Facebook.
+ * @param accessToken Token de acceso de la página.
+ * @param mediaType 'image' | 'video' (por defecto 'image').
+ * @returns Un objeto con el ID del post o un error.
+ */
 export async function publishToFacebook(
-  imageContent: any, 
+  mediaContent: any, 
   caption: string,
   targetPageId: string,
-  accessToken: string
+  accessToken: string,
+  mediaType: 'image' | 'video' = 'image'
 ) {
   if (!targetPageId || !accessToken) {
     throw new Error('Faltan credenciales de Facebook (Page ID o Access Token)');
   }
 
-  const url = `https://graph.facebook.com/v19.0/${targetPageId}/photos`;
+  // Diferentes endpoints y parámetros según el tipo de medio
+  const endpoint = mediaType === 'video' ? 'videos' : 'photos';
+  const captionParam = mediaType === 'video' ? 'description' : 'caption';
+  const url = `https://graph.facebook.com/v19.0/${targetPageId}/${endpoint}`;
 
   try {
     const formData = new FormData();
-    // Convertimos a Blob si es Buffer, para compatibilidad con Fetch nativo
-    const blob = imageContent instanceof Blob ? imageContent : new Blob([imageContent as any]);
+    const filename = mediaType === 'video' ? 'video.mp4' : 'photo.jpg';
     
-    formData.append('source', blob);
-    formData.append('caption', caption);
+    // Convertimos a Blob y nos aseguramos de que tenga un tipo si es posible
+    let blob = mediaContent instanceof Blob ? mediaContent : new Blob([mediaContent as any]);
+    
+    // Forzamos el tipo si es video y está vacío
+    if (mediaType === 'video' && (!blob.type || blob.type === 'application/octet-stream')) {
+      blob = new Blob([blob], { type: 'video/mp4' });
+    } else if (mediaType === 'image' && (!blob.type || blob.type === 'application/octet-stream')) {
+      blob = new Blob([blob], { type: 'image/jpeg' });
+    }
+
+    console.log(`[Facebook] Preparando ${mediaType} para subir. Size: ${blob.size}, Type: ${blob.type}, Filename: ${filename}`);
+    
+    formData.append('source', blob, filename);
+    formData.append(captionParam, caption);
 
     const response = await fetch(url, {
       method: 'POST',
@@ -43,13 +68,13 @@ export async function publishToFacebook(
 
     if (!response.ok) {
       console.error('[Facebook Error]', data);
-      throw new Error(data.error?.message || 'Error al publicar en Facebook');
+      throw new Error(data.error?.message || `Error al publicar ${mediaType} en Facebook`);
     }
 
     return {
       success: true,
       id: data.id,
-      post_id: data.post_id,
+      post_id: data.post_id || data.id, // Videos a veces devuelven id pero no post_id directamente
     };
   } catch (error: any) {
     console.error('[Facebook Exception]', error);

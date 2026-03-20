@@ -12,7 +12,7 @@ interface Post {
   copy_id?: string | null;
   image_path: string;
   scheduled_at: string;
-  status: 'scheduled' | 'published' | 'failed' | 'pending';
+  status: 'scheduled' | 'published' | 'failed' | 'pending' | 'processing';
   platform: string;
   facebook_pages?: { page_name: string } | null;
   instagram_accounts?: { username: string } | null;
@@ -155,6 +155,28 @@ export default function ScheduledPosts() {
     }
   };
 
+  const handleApprove = async (id: string) => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('posts')
+        .update({ status: 'scheduled' })
+        .eq('id', id)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+      
+      setPosts((prev: Post[]) => prev.map((p: Post) => 
+        p.id === id ? { ...p, status: 'scheduled' as const } : p
+      ));
+    } catch (error: any) {
+      alert('Error al aprobar: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleEdit = (post: Post) => {
     setEditingPost(post);
     setIsModalOpen(true);
@@ -248,11 +270,13 @@ export default function ScheduledPosts() {
                     post.status === 'published' ? 'bg-emerald-500 text-white border-emerald-400' :
                     post.status === 'failed' ? 'bg-rose-500 text-white border-rose-400' :
                     post.status === 'pending' ? 'bg-amber-500 text-white border-amber-400' :
+                    post.status === 'processing' ? 'bg-indigo-500 text-white border-indigo-400 animate-pulse' :
                     'bg-sky-500 text-white border-sky-400'
                   }`}>
                     {post.status === 'published' ? 'Publicado' : 
                      post.status === 'failed' ? 'Error' :
                      post.status === 'pending' ? 'Pendiente' :
+                     post.status === 'processing' ? 'Procesando...' :
                      'Programado'}
                   </span>
                 </div>
@@ -368,11 +392,13 @@ export default function ScheduledPosts() {
                         selectedPost.status === 'published' ? 'bg-emerald-500 text-white border-emerald-400' :
                         selectedPost.status === 'failed' ? 'bg-rose-500 text-white border-rose-400' :
                         selectedPost.status === 'pending' ? 'bg-amber-500 text-white border-amber-400' :
+                        selectedPost.status === 'processing' ? 'bg-indigo-500 text-white border-indigo-400 animate-pulse' :
                         'bg-sky-500 text-white border-sky-400'
                       }`}>
                         {selectedPost.status === 'published' ? 'Publicado' : 
                          selectedPost.status === 'failed' ? 'Error' :
                          selectedPost.status === 'pending' ? 'Pendiente' :
+                         selectedPost.status === 'processing' ? 'Procesando...' :
                          'Programado'}
                       </span>
                       <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">

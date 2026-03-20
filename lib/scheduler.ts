@@ -9,20 +9,7 @@ export async function processScheduledPosts() {
   const { data: posts, error } = await supabaseAdmin
     .from('posts')
     .select(`
-      *,
-      copies (
-        content
-      ),
-      facebook_pages (
-        page_id,
-        page_access_token
-      ),
-      instagram_accounts (
-        instagram_business_id,
-        facebook_pages (
-          page_access_token
-        )
-      )
+      id
     `)
     .eq('status', 'scheduled')
     .lte('scheduled_at', now);
@@ -37,12 +24,47 @@ export async function processScheduledPosts() {
     return { success: true, processed: 0, succeeded: 0, failed: 0 };
   }
 
-  console.log(`[Scheduler] Procesando ${posts.length} post(s)...`);
+  // 2. Lock posts by setting status to 'processing'
+  // Use .select() to get only those that were successfully updated (prevents race conditions)
+  const postIds = posts.map(p => p.id);
+  const { data: lockedPosts, error: lockError } = await supabaseAdmin
+    .from('posts')
+    .update({ status: 'processing' })
+    .in('id', postIds)
+    .eq('status', 'scheduled')
+    .select(`
+      *,
+      copies (
+        content
+      ),
+      facebook_pages (
+        page_id,
+        page_access_token
+      ),
+      instagram_accounts (
+        instagram_business_id,
+        facebook_pages (
+          page_access_token
+        )
+      )
+    `);
+
+  if (lockError) {
+    console.error('[Scheduler] Error al bloquear posts:', lockError);
+    return { success: false, error: lockError.message };
+  }
+
+  if (!lockedPosts || lockedPosts.length === 0) {
+    console.log('[Scheduler] Todos los posts ya estaban siendo procesados por otra ejecución.');
+    return { success: true, processed: 0, succeeded: 0, failed: 0 };
+  }
+
+  console.log(`[Scheduler] Procesando ${lockedPosts.length} post(s) bloqueado(s)...`);
 
   let succeeded = 0;
   let failed = 0;
 
-  for (const post of posts) {
+  for (const post of lockedPosts) {
     try {
       console.log(`[Scheduler] Procesando post ID: ${post.id}`);
 
@@ -161,7 +183,7 @@ export async function processScheduledPosts() {
           .eq('id', post.id);
         
         failed++;
-        console.error(`[Scheduler] Post ${post.id} falló en Facebook: ${result.error}`);
+        console.error(`[Scheduler] Post ${post.id} falló en ${post.platform}: ${result.error}`);
       }
     } catch (e: any) {
       failed++;
@@ -181,7 +203,7 @@ export async function processScheduledPosts() {
 
   return {
     success: true,
-    processed: posts.length,
+    processed: lockedPosts.length,
     succeeded,
     failed
   };

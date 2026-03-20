@@ -6,9 +6,43 @@
 const META_GRAPH_VERSION = 'v19.0';
 
 /**
+ * Polls the Instagram container status until it's FINISHED, ERROR, or times out.
+ * Instagram requires media to be processed before publishing — even for images.
+ */
+async function waitForContainerReady(
+  creationId: string,
+  accessToken: string,
+  maxWaitMs = 60000,
+  pollIntervalMs = 4000
+): Promise<void> {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < maxWaitMs) {
+    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+
+    const statusUrl = `https://graph.facebook.com/${META_GRAPH_VERSION}/${creationId}?fields=status_code&access_token=${accessToken}`;
+    const statusRes = await fetch(statusUrl);
+    const statusData = await statusRes.json();
+
+    const statusCode = statusData.status_code;
+    console.log(`[Instagram] Container ${creationId} status: ${statusCode}`);
+
+    if (statusCode === 'FINISHED') {
+      return; // Ready to publish
+    }
+    if (statusCode === 'ERROR' || statusCode === 'EXPIRED') {
+      throw new Error(`Instagram container processing failed with status: ${statusCode}`);
+    }
+    // Continue polling for: IN_PROGRESS, PUBLISHED
+  }
+
+  throw new Error(`Instagram container ${creationId} timed out after ${maxWaitMs / 1000}s`);
+}
+
+/**
  * Publica una foto o video en una cuenta de Instagram Business.
  * Instagram requiere que el medio esté disponible vía una URL pública.
- * 
+ *
  * @param mediaUrl URL pública del medio (imagen o video).
  * @param caption Texto que acompañará al post.
  * @param instagramBusinessId ID de la cuenta de Instagram Business.
@@ -30,8 +64,7 @@ export async function publishToInstagram(
   try {
     // 1. Crear el contenedor de medios
     console.log(`[Instagram] Creando contenedor para ${mediaType}: ${mediaUrl}`);
-    
-    // Instagram requiere URLSearchParams para los parámetros
+
     const params = new URLSearchParams();
     params.append('caption', caption);
     params.append('access_token', accessToken);
@@ -44,7 +77,7 @@ export async function publishToInstagram(
     }
 
     const containerUrl = `https://graph.facebook.com/${META_GRAPH_VERSION}/${instagramBusinessId}/media?${params.toString()}`;
-    
+
     const containerRes = await fetch(containerUrl, { method: 'POST' });
     const containerData = await containerRes.json();
 
@@ -54,18 +87,18 @@ export async function publishToInstagram(
     }
 
     const creationId = containerData.id;
-    console.log(`[Instagram] Contenedor creado con ID: ${creationId}. Publicando...`);
+    console.log(`[Instagram] Contenedor creado con ID: ${creationId}. Esperando procesamiento...`);
 
-    // 2. Esperar si es video (Instagram procesa videos asíncronamente)
-    if (mediaType === 'video') {
-       // Intentamos esperar un poco para que el procesamiento inicial termine
-       // En un sistema real robusto, deberíamos consultar el status del contenedor
-       await new Promise(resolve => setTimeout(resolve, 15000)); 
-    }
+    // 2. Esperar a que el contenedor esté listo mediante polling
+    // Videos pueden tardar más (hasta 2 min), imágenes hasta 1 min
+    const maxWait = mediaType === 'video' ? 120000 : 60000;
+    await waitForContainerReady(creationId, accessToken, maxWait);
+
+    console.log(`[Instagram] Contenedor ${creationId} listo. Publicando...`);
 
     // 3. Publicar el contenedor
     const publishUrl = `https://graph.facebook.com/${META_GRAPH_VERSION}/${instagramBusinessId}/media_publish?creation_id=${creationId}&access_token=${accessToken}`;
-    
+
     const publishRes = await fetch(publishUrl, { method: 'POST' });
     const publishData = await publishRes.json();
 
@@ -74,6 +107,7 @@ export async function publishToInstagram(
       throw new Error(publishData.error?.message || 'Error al publicar contenedor de Instagram');
     }
 
+    console.log(`[Instagram] Publicado exitosamente. Post ID: ${publishData.id}`);
     return {
       success: true,
       id: publishData.id

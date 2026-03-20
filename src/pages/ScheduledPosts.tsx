@@ -76,6 +76,11 @@ export default function ScheduledPosts() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
+  const [activeTab, setActiveTab] = useState<'facebook' | 'instagram'>('facebook');
+
+  const filteredPosts = posts.filter(p => p.platform === activeTab || p.platform === 'both');
+  const facebookPostsCount = posts.filter(p => p.platform === 'facebook' || p.platform === 'both').length;
+  const instagramPostsCount = posts.filter(p => p.platform === 'instagram' || p.platform === 'both').length;
 
   const fetchPosts = async () => {
     if (!user) return;
@@ -126,26 +131,26 @@ export default function ScheduledPosts() {
 
   const handleApproveAll = async () => {
     if (!user) return;
-    const pendingPosts = posts.filter((p: Post) => p.status === 'pending');
+    const pendingPosts = filteredPosts.filter((p: Post) => p.status === 'pending');
     if (pendingPosts.length === 0) {
-      alert('No hay publicaciones pendientes por aprobar.');
+      alert(`No hay publicaciones pendientes por aprobar en ${activeTab === 'facebook' ? 'Facebook' : 'Instagram'}.`);
       return;
     }
 
-    if (!confirm(`¿Aprobar ${pendingPosts.length} publicaciones pendientes?`)) return;
+    if (!confirm(`¿Aprobar ${pendingPosts.length} publicaciones pendientes de ${activeTab === 'facebook' ? 'Facebook' : 'Instagram'}?`)) return;
 
     setLoading(true);
     try {
+      const pendingIds = pendingPosts.map(p => p.id);
       const { error } = await supabase
         .from('posts')
         .update({ status: 'scheduled' })
-        .eq('user_id', user.id)
-        .eq('status', 'pending');
+        .in('id', pendingIds);
 
       if (error) throw error;
       
       setPosts((prev: Post[]) => prev.map((p: Post) => 
-        p.status === 'pending' ? { ...p, status: 'scheduled' as const } : p
+        pendingIds.includes(p.id) ? { ...p, status: 'scheduled' as const } : p
       ));
       await fetchPosts(); // Refresh to ensure UI is in sync
     } catch (error: any) {
@@ -195,7 +200,7 @@ export default function ScheduledPosts() {
           <p className="text-slate-500 font-medium">Gestiona tu calendario y aprueba las publicaciones pendientes.</p>
         </div>
         <div className="flex gap-3">
-          {posts.some(p => p.status === 'pending') && (
+          {filteredPosts.some(p => p.status === 'pending') && (
             <button 
               onClick={handleApproveAll}
               disabled={loading}
@@ -204,7 +209,7 @@ export default function ScheduledPosts() {
               <span className="material-symbols-outlined text-[18px]">task_alt</span>
               <span className="text-sm uppercase tracking-widest font-bold">Aprobar Todo</span>
               <span className="ml-1 bg-white/20 text-white text-xs font-black px-2 py-0.5 rounded-full">
-                {posts.filter((p: Post) => p.status === 'pending').length}
+                {filteredPosts.filter((p: Post) => p.status === 'pending').length}
               </span>
             </button>
           )}
@@ -217,6 +222,40 @@ export default function ScheduledPosts() {
           </button>
         </div>
       </div>
+
+      {/* Tabs */}
+      {!loading && (
+        <div className="flex items-center gap-4 bg-slate-100 p-1.5 rounded-2xl w-fit">
+          <button
+            onClick={() => setActiveTab('facebook')}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all ${
+              activeTab === 'facebook' 
+                ? 'bg-white text-blue-600 shadow-sm' 
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">thumb_up</span>
+            Facebook
+            <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-black ${activeTab === 'facebook' ? 'bg-blue-50 text-blue-600' : 'bg-slate-200 text-slate-500'}`}>
+              {facebookPostsCount}
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab('instagram')}
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all ${
+              activeTab === 'instagram' 
+                ? 'bg-white text-rose-500 shadow-sm' 
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">photo_camera</span>
+            Instagram
+            <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-black ${activeTab === 'instagram' ? 'bg-rose-50 text-rose-500' : 'bg-slate-200 text-slate-500'}`}>
+              {instagramPostsCount}
+            </span>
+          </button>
+        </div>
+      )}
 
       <CreatePostModal 
         isOpen={isModalOpen} 
@@ -240,12 +279,12 @@ export default function ScheduledPosts() {
       {/* Grid of Posts */}
       {loading ? (
         <div className="text-center py-24 text-slate-400 font-bold uppercase tracking-[0.2em] animate-pulse">Cargando publicaciones...</div>
-      ) : posts.length === 0 ? (
+      ) : filteredPosts.length === 0 ? (
         <div className="text-center py-24 bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-200">
           <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
             <span className="material-symbols-outlined text-4xl text-slate-300">post_add</span>
           </div>
-          <p className="text-slate-500 font-black text-xl mb-4">No hay publicaciones programadas aún.</p>
+          <p className="text-slate-500 font-black text-xl mb-4">No hay publicaciones de {activeTab === 'facebook' ? 'Facebook' : 'Instagram'} programadas aún.</p>
           <button 
             onClick={() => setIsModalOpen(true)}
             className="text-indigo-600 font-black text-sm uppercase tracking-widest hover:underline"
@@ -255,7 +294,7 @@ export default function ScheduledPosts() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {posts.map((post) => (
+          {filteredPosts.map((post) => (
             <div 
               key={post.id} 
               onClick={() => setSelectedPost(post)}

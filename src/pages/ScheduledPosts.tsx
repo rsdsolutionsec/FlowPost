@@ -91,9 +91,9 @@ export default function ScheduledPosts() {
     if (!account) return true;
     
     if (account.platform === 'facebook') {
-      return p.platform === 'facebook' || (p.platform === 'both' && p.facebook_page_id === activeAccountId);
+      return (p.platform === 'facebook' || p.platform === 'both') && p.facebook_page_id === activeAccountId;
     } else {
-      return p.platform === 'instagram' || (p.platform === 'both' && p.instagram_account_id === activeAccountId);
+      return (p.platform === 'instagram' || p.platform === 'both') && p.instagram_account_id === activeAccountId;
     }
   });
 

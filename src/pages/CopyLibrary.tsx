@@ -27,6 +27,10 @@ export default function CopyLibrary() {
   const [copyStatuses, setCopyStatuses] = useState<Map<string, 'active' | 'published'>>(new Map());
   const [sendingAll, setSendingAll] = useState(false);
   const [sendAllResult, setSendAllResult] = useState<{ sent: number; skipped: number } | null>(null);
+  const [isSendAllModalOpen, setIsSendAllModalOpen] = useState(false);
+  const [availablePages, setAvailablePages] = useState<any[]>([]);
+  const [availableIgAccounts, setAvailableIgAccounts] = useState<any[]>([]);
+  const [selectedDestinations, setSelectedDestinations] = useState<string[]>([]);
 
   const fetchCopies = async () => {
     if (!user) return;
@@ -68,6 +72,17 @@ export default function CopyLibrary() {
 
   useEffect(() => {
     fetchCopies();
+    if (user) {
+      const fetchAccounts = async () => {
+        const [pagesRes, igRes] = await Promise.all([
+          supabase.from('facebook_pages').select('id, page_name').eq('user_id', user.id).eq('is_active', true),
+          supabase.from('instagram_accounts').select('id, username').eq('user_id', user.id).eq('is_active', true)
+        ]);
+        if (pagesRes.data) setAvailablePages(pagesRes.data);
+        if (igRes.data) setAvailableIgAccounts(igRes.data);
+      };
+      fetchAccounts();
+    }
   }, [user]);
 
   const handleDelete = async (id: string) => {
@@ -93,20 +108,20 @@ export default function CopyLibrary() {
       alert('Todos los copies ya han sido enviados a programados.');
       return;
     }
-    if (!confirm(`¿Enviar ${unsentCopies.length} cop${unsentCopies.length === 1 ? 'y' : 'ys'} a programados como pendientes?`)) return;
+    
+    if (selectedDestinations.length === 0) {
+      alert('Por favor selecciona al menos un destino.');
+      return;
+    }
 
     setSendingAll(true);
     setSendAllResult(null);
+    setIsSendAllModalOpen(false);
 
     try {
-      // Fetch active Facebook page and Instagram account
-      const [pagesRes, igRes] = await Promise.all([
-        supabase.from('facebook_pages').select('id').eq('user_id', user.id).eq('is_active', true).limit(1),
-        supabase.from('instagram_accounts').select('id').eq('user_id', user.id).eq('is_active', true).limit(1),
-      ]);
-
-      const pageId = pagesRes.data?.[0]?.id || null;
-      const igId = igRes.data?.[0]?.id || null;
+      // Destination IDs
+      const fbDestinations = selectedDestinations.filter(d => d.startsWith('fb:')).map(d => d.split(':')[1]);
+      const igDestinations = selectedDestinations.filter(d => d.startsWith('ig:')).map(d => d.split(':')[1]);
 
       // Pre-fetch all media to resolve filenames (batch lookup)
       const { data: allMedia } = await supabase
@@ -174,21 +189,25 @@ export default function CopyLibrary() {
 
         let addedAny = false;
 
-        // Add Facebook post
-        if ((platform === 'facebook' || platform === 'both') && pageId) {
-          postsToInsert.push({ ...base, platform: 'facebook', facebook_page_id: pageId, instagram_account_id: null });
-          addedAny = true;
+        // Add Facebook posts
+        if (platform === 'facebook' || platform === 'both') {
+          fbDestinations.forEach(pageId => {
+            postsToInsert.push({ ...base, platform: 'facebook', facebook_page_id: pageId, instagram_account_id: null });
+            addedAny = true;
+          });
         }
 
-        // Add Instagram post
-        if ((platform === 'instagram' || platform === 'both') && igId) {
-          postsToInsert.push({ ...base, platform: 'instagram', facebook_page_id: null, instagram_account_id: igId });
-          addedAny = true;
+        // Add Instagram posts
+        if (platform === 'instagram' || platform === 'both') {
+          igDestinations.forEach(igId => {
+            postsToInsert.push({ ...base, platform: 'instagram', facebook_page_id: null, instagram_account_id: igId });
+            addedAny = true;
+          });
         }
 
-        // Fallback: if platform context didn't match any connected account but we have a pageId, default to FB
-        if (!addedAny && pageId) {
-          postsToInsert.push({ ...base, platform: 'facebook', facebook_page_id: pageId, instagram_account_id: null });
+        // Fallback: if platform context didn't match any selection but we have FB selections, default to first FB selection
+        if (!addedAny && fbDestinations.length > 0) {
+          postsToInsert.push({ ...base, platform: 'facebook', facebook_page_id: fbDestinations[0], instagram_account_id: null });
         }
       }
 
@@ -229,7 +248,7 @@ export default function CopyLibrary() {
           {/* Send All button - only when there are unsent copies */}
           {unsentCount > 0 && (
             <button 
-              onClick={handleSendAll}
+              onClick={() => setIsSendAllModalOpen(true)}
               disabled={sendingAll}
               className="px-6 py-4 bg-amber-500 text-white font-black rounded-2xl hover:bg-amber-600 transition-all flex items-center gap-2 shadow-lg shadow-amber-500/20 active:scale-95 translate-y-[-2px] disabled:opacity-60"
             >
@@ -304,6 +323,110 @@ export default function CopyLibrary() {
         onClose={() => setIsImportModalOpen(false)}
         onSuccess={fetchCopies}
       />
+
+      {/* Send All Destinations Modal */}
+      <AnimatePresence>
+        {isSendAllModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSendAllModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="relative w-full max-w-lg bg-white rounded-[3rem] shadow-2xl overflow-hidden"
+            >
+              <div className="p-8 sm:p-12 space-y-8">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-2">
+                    <h3 className="text-3xl font-black text-slate-900 font-headline">Destinos de Envío</h3>
+                    <p className="text-slate-500 font-medium text-sm">¿A qué cuentas quieres enviar los {unsentCount} copys?</p>
+                  </div>
+                  <button 
+                    onClick={() => setIsSendAllModalOpen(false)}
+                    className="p-2 hover:bg-slate-100 rounded-full transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-slate-400">close</span>
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {availablePages.map(p => (
+                      <label key={`fb:${p.id}`} className={`flex items-center gap-3 p-4 bg-white border rounded-2xl cursor-pointer hover:border-blue-300 transition-all ${selectedDestinations.includes(`fb:${p.id}`) ? 'border-blue-400 bg-blue-50/10 shadow-sm' : 'border-slate-100'}`}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedDestinations.includes(`fb:${p.id}`)}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedDestinations([...selectedDestinations, `fb:${p.id}`]);
+                            else setSelectedDestinations(selectedDestinations.filter(id => id !== `fb:${p.id}`));
+                          }}
+                          className="w-5 h-5 rounded-lg text-blue-600 focus:ring-blue-500 border-slate-300"
+                        />
+                        <div className="flex flex-col min-w-0">
+                          <div className="flex items-center gap-1.5 font-black text-slate-900 text-sm truncate">
+                            <span className="material-symbols-outlined text-[18px] text-blue-500 shrink-0">thumb_up</span>
+                            <span className="truncate">{p.page_name}</span>
+                          </div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Facebook Page</span>
+                        </div>
+                      </label>
+                    ))}
+                    {availableIgAccounts.map(ig => (
+                      <label key={`ig:${ig.id}`} className={`flex items-center gap-3 p-4 bg-white border rounded-2xl cursor-pointer hover:border-rose-300 transition-all ${selectedDestinations.includes(`ig:${ig.id}`) ? 'border-rose-400 bg-rose-50/10 shadow-sm' : 'border-slate-100'}`}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedDestinations.includes(`ig:${ig.id}`)}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedDestinations([...selectedDestinations, `ig:${ig.id}`]);
+                            else setSelectedDestinations(selectedDestinations.filter(id => id !== `ig:${ig.id}`));
+                          }}
+                          className="w-5 h-5 rounded-lg text-rose-500 focus:ring-rose-500 border-slate-300"
+                        />
+                        <div className="flex flex-col min-w-0">
+                          <div className="flex items-center gap-1.5 font-black text-slate-900 text-sm truncate">
+                            <span className="material-symbols-outlined text-[18px] text-rose-500 shrink-0">photo_camera</span>
+                            <span className="truncate">@{ig.username}</span>
+                          </div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Instagram Account</span>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                  
+                  {availablePages.length === 0 && availableIgAccounts.length === 0 && (
+                    <div className="p-8 text-center bg-rose-50/50 rounded-3xl border border-rose-100">
+                      <p className="text-sm font-bold text-rose-500">No hay cuentas conectadas disponibles.</p>
+                      <p className="text-xs text-rose-400 mt-1">Conecta una cuenta en Configuración primero.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-4 pt-4">
+                  <button
+                    onClick={() => setIsSendAllModalOpen(false)}
+                    className="flex-1 px-8 py-5 text-slate-500 font-black text-sm uppercase tracking-[0.2em] hover:text-slate-700 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleSendAll}
+                    disabled={selectedDestinations.length === 0}
+                    className="flex-1 px-8 py-5 bg-slate-900 text-white font-black text-sm uppercase tracking-[0.2em] rounded-3xl hover:bg-indigo-600 transition-all shadow-xl shadow-indigo-600/20 active:scale-95 disabled:opacity-50 disabled:grayscale disabled:scale-100"
+                  >
+                    Confirmar Envío
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* CreatePostModal - only for individual copy scheduling */}
       <CreatePostModal

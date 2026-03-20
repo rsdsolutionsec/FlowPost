@@ -1,16 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-
-interface ParsedCopy {
-  name: string;
-  content: string;
-  suggested_at?: string | null;
-  media_path?: string | null;
-  platform?: string | null;
-  status?: 'pending' | 'success' | 'error';
-  error?: string;
-}
 
 interface ImportCopyModalProps {
   isOpen: boolean;
@@ -18,76 +9,63 @@ interface ImportCopyModalProps {
   onSuccess: () => void;
 }
 
+interface ParsedCopy {
+  platform: string;
+  name: string;
+  content: string;
+  suggested_at: string | null;
+  media_path: string | null;
+}
+
 export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCopyModalProps) {
   const { user } = useAuth();
-  const [format, setFormat] = useState<'csv' | 'txt'>('csv');
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<ParsedCopy[]>([]);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ imported: number; failed: number; errors: string[] } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [format, setFormat] = useState<'txt' | 'csv'>('txt');
+  const [inputText, setInputText] = useState('');
+  const [preview, setPreview] = useState<ParsedCopy[]>([]);
+  const [result, setResult] = useState<{ imported: number; failed: number } | null>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-      setFile(selectedFile);
-      parseFile(selectedFile);
+  const parseDate = (dStr: string) => {
+    try {
+      // Expecting YYYY-MM-DD/HH:mm or similar
+      const clean = dStr.trim().replace('/', ' ');
+      const d = new Date(clean);
+      return isNaN(d.getTime()) ? null : d.toISOString();
+    } catch {
+      return null;
     }
   };
 
-  const parseFile = (file: File) => {
-    const parseDate = (dateStr: string) => {
-      if (!dateStr || !dateStr.trim()) return null;
-      try {
-        // Format expected: 2026-19-03/16:37 -> YYYY-DD-MM/HH:mm
-        const [datePart, timePart] = dateStr.trim().split('/');
-        if (!datePart) return null;
-        
-        const [year, day, month] = datePart.split('-');
-        if (!year || !day || !month) return null;
+  const handleTextChange = (text: string) => {
+    setInputText(text);
+    if (!text.trim()) {
+      setPreview([]);
+      return;
+    }
 
-        // JS Date prefers YYYY-MM-DD
-        const isoString = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${timePart || '00:00'}:00`;
-        const date = new Date(isoString);
-        return isNaN(date.getTime()) ? null : date.toISOString();
-      } catch (e) {
-        return null;
-      }
-    };
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      let parsed: ParsedCopy[] = [];
-
-      if (format === 'csv') {
-        const lines = text.split(/\r?\n/).filter(l => l.trim());
-        if (lines.length > 1) {
-          parsed = lines.slice(1).map((line, i) => {
-            const [name, content, date, path] = line.split(',');
-            return {
-              name: name?.trim() || `Imported CSV ${i + 1}`,
-              content: content?.trim()?.replace(/^"|"$/g, '') || '',
-              suggested_at: parseDate(date),
-              media_path: path?.trim() || null
-            };
-          });
-        }
-      } else {
-        // TXT format: Platform|Name|Content|Date|Path
-        // Platform can be: I (Instagram), F (Facebook), I/F (both)
+    let parsed: ParsedCopy[] = [];
+    if (format === 'txt') {
         const platformMap: Record<string, string> = {
           'I': 'instagram',
           'F': 'facebook',
           'I/F': 'both',
           'F/I': 'both',
+          'I&F': 'both',
+          'F&I': 'both',
         };
         const lines = text.split(/\r?\n/).filter(l => l.trim());
         parsed = lines.map((line, i) => {
-          const parts = line.split('|');
-          // If first part looks like a platform prefix (I, F, or I/F)
-          const firstPart = parts[0]?.trim().toUpperCase();
-          const isPlatformPrefix = firstPart === 'I' || firstPart === 'F' || firstPart === 'I/F' || firstPart === 'F/I';
+          // Strip BOM and other invisible characters at start of file
+          const cleanLine = line.replace(/^\uFEFF/, '').trim();
+          const parts = cleanLine.split('|');
+          
+          // Normalize first part: trim and handle variations of I/F, I & F, etc.
+          let firstPart = parts[0]?.trim().toUpperCase().replace(/\s+/g, '');
+          if (firstPart === 'I/F' || firstPart === 'F/I' || firstPart === 'I&F' || firstPart === 'F&I') {
+            firstPart = 'I/F';
+          }
+
+          const isPlatformPrefix = firstPart === 'I' || firstPart === 'F' || firstPart === 'I/F';
 
           if (isPlatformPrefix && parts.length >= 3) {
             // New format: Platform|Name|Content|Date|Path
@@ -112,121 +90,111 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
           return {
             platform: 'facebook',
             name: `Imported TXT ${i + 1}`,
-            content: line.trim(),
+            content: cleanLine,
             suggested_at: null,
             media_path: null
           };
         });
-      }
-
-      setPreview(parsed.filter(p => p.content));
-    };
-    reader.readAsText(file);
+    } else {
+      // Simple CSV (Name, Content)
+      const lines = text.split('\n').filter(l => l.includes(','));
+      parsed = lines.map((line, i) => {
+        const [name, content] = line.split(',');
+        return {
+          platform: 'facebook',
+          name: name?.trim() || `Imported CSV ${i + 1}`,
+          content: content?.trim() || '',
+          suggested_at: null,
+          media_path: null
+        };
+      });
+    }
+    setPreview(parsed);
   };
 
   const handleImport = async () => {
     if (!user || preview.length === 0) return;
-
     setLoading(true);
     try {
-      const response = await fetch('/api/copies/import', {
+      const res = await fetch('/api/copies/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          format,
           copies: preview
         })
       });
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.details || data.error);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Import failed');
 
-      setResult(data);
-      if (data.imported > 0) {
+      setResult({ imported: data.imported, failed: data.failed });
+      setTimeout(() => {
         onSuccess();
-      }
+      }, 2000);
     } catch (error: any) {
-      alert('Error en la importación: ' + error.message);
+      alert('Error: ' + error.message);
     } finally {
       setLoading(false);
     }
   };
 
   const reset = () => {
-    setFile(null);
+    setInputText('');
     setPreview([]);
     setResult(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={onClose}
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
           />
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-2xl bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]"
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            className="relative w-full max-w-2xl bg-white rounded-[2.5rem] p-10 shadow-2xl overflow-hidden"
           >
-            <div className="p-8 space-y-6 flex-1 overflow-y-auto">
-              <div className="flex justify-between items-center">
-                <h3 className="text-2xl font-black text-slate-900 font-headline">Importar Copys</h3>
-                <button onClick={onClose} className="p-2 hover:bg-slate-50 rounded-full transition-colors">
-                  <span className="material-symbols-outlined">close</span>
-                </button>
-              </div>
+            <div className="mb-8">
+              <h2 className="text-2xl font-black text-slate-900 font-headline">Importar Biblioteca</h2>
+              <p className="text-slate-400 text-sm font-medium">Carga masivamente tus copies maestros.</p>
+            </div>
 
+            <div className="space-y-6">
               {!result ? (
                 <>
-                  <div className="flex gap-4 p-1.5 bg-slate-50 rounded-2xl">
-                    <button
-                      onClick={() => { setFormat('csv'); reset(); }}
-                      className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-                        format === 'csv' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'
-                      }`}
+                  <div className="flex gap-4">
+                    <button 
+                      onClick={() => setFormat('txt')}
+                      className={`flex-1 p-4 rounded-2xl border-2 transition-all font-black text-xs uppercase tracking-widest ${format === 'txt' ? 'border-primary bg-primary/5 text-primary' : 'border-slate-100 text-slate-400'}`}
                     >
-                      CSV (name,content,date,path)
+                      Archivo TXT (|)
                     </button>
-                    <button
-                      onClick={() => { setFormat('txt'); reset(); }}
-                      className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-                        format === 'txt' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-400'
-                      }`}
+                    <button 
+                      onClick={() => setFormat('csv')}
+                      className={`flex-1 p-4 rounded-2xl border-2 transition-all font-black text-xs uppercase tracking-widest ${format === 'csv' ? 'border-primary bg-primary/5 text-primary' : 'border-slate-100 text-slate-400'}`}
                     >
-                      TXT (I/F | Name | Content | Date | Path)
+                      Archivo CSV (,)
                     </button>
                   </div>
 
-                  <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-4 border-dashed border-slate-100 rounded-[2rem] p-12 text-center space-y-4 hover:border-indigo-100 group cursor-pointer transition-all bg-slate-50/50"
-                  >
-                    <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mx-auto text-slate-300 group-hover:text-indigo-400 group-hover:scale-110 transition-all">
-                      <span className="material-symbols-outlined text-4xl">upload_file</span>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center px-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+                        Pega el contenido {format === 'txt' ? '(Formato: Red|Nombre|Contenido|Fecha|Media)' : '(Nombre, Contenido)'}
+                      </label>
+                      <span className="text-[10px] font-medium text-slate-300 italic">Formato fecha: 2024-03-25/14:00</span>
                     </div>
-                    <div>
-                      <p className="text-slate-500 font-bold">
-                        {file ? file.name : 'Haz click o arrastra tu archivo'}
-                      </p>
-                      <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-1">
-                        Formato: {format.toUpperCase()}
-                      </p>
-                    </div>
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      onChange={handleFileChange} 
-                      accept={format === 'csv' ? '.csv' : '.txt'} 
-                      className="hidden" 
+                    <textarea 
+                      value={inputText}
+                      onChange={(e) => handleTextChange(e.target.value)}
+                      placeholder={format === 'txt' ? "I/F|Promo|Contenido...|2024-03-20/10:00|folder/img.png" : "Nombre, Contenido"}
+                      className="w-full p-6 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary/20 min-h-[200px] text-sm font-medium resize-none shadow-inner"
                     />
                   </div>
 
@@ -291,40 +259,28 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
                       {result.imported} copys importados con éxito. {result.failed > 0 && `${result.failed} fallaron.`}
                     </p>
                   </div>
-                  {result.errors.length > 0 && (
-                    <div className="bg-rose-50 p-4 rounded-2xl text-left max-h-32 overflow-y-auto">
-                      <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest mb-2">Errores:</p>
-                      <ul className="text-xs text-rose-500 space-y-1">
-                        {result.errors.map((err, i) => <li key={i}>{err}</li>)}
-                      </ul>
-                    </div>
-                  )}
+                  <button onClick={onClose} className="px-10 py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all">Continuar</button>
+                </div>
+              )}
+
+              {!result && (
+                <div className="pt-4 flex gap-4">
+                  <button onClick={onClose} className="px-8 py-5 rounded-2xl font-black text-xs uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-colors">Cerrar</button>
                   <button 
-                    onClick={onClose}
-                    className="w-full py-4 bg-slate-900 text-white font-black rounded-2xl hover:bg-emerald-600 transition-all"
+                    onClick={handleImport}
+                    disabled={loading || preview.length === 0}
+                    className="flex-1 bg-primary text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-primary/90 transition-all shadow-xl shadow-primary/20 disabled:opacity-50 flex items-center justify-center gap-3"
                   >
-                    Cerrar
+                    {loading ? 'Procesando...' : (
+                      <>
+                        <span className="material-symbols-outlined text-lg">upload</span>
+                        Importar Ahora
+                      </>
+                    )}
                   </button>
                 </div>
               )}
             </div>
-
-            {!result && preview.length > 0 && (
-              <div className="p-8 bg-slate-50/50 border-t border-slate-100">
-                <button
-                  onClick={handleImport}
-                  disabled={loading}
-                  className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl hover:bg-slate-900 transition-all shadow-xl shadow-indigo-600/20 flex items-center justify-center gap-2"
-                >
-                  {loading ? 'Importando...' : (
-                    <>
-                      <span className="material-symbols-outlined text-[20px]">bolt</span>
-                      <span>Importar {preview.length} Copys</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
           </motion.div>
         </div>
       )}

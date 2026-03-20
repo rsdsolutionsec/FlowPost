@@ -17,11 +17,13 @@ export default function CreateCopyModal({ isOpen, onClose, onSuccess, editCopy }
   const [content, setContent] = useState('');
   const [suggestedAt, setSuggestedAt] = useState('');
   const [mediaPath, setMediaPath] = useState('');
+  const [platform, setPlatform] = useState('facebook');
 
   useEffect(() => {
     if (editCopy) {
       setName(editCopy.name);
       setContent(editCopy.content);
+      setPlatform(editCopy.platform || 'facebook');
       // Convert to local datetime-local format (YYYY-MM-DDTHH:mm)
       if (editCopy.suggested_at) {
         const d = new Date(editCopy.suggested_at);
@@ -37,6 +39,7 @@ export default function CreateCopyModal({ isOpen, onClose, onSuccess, editCopy }
       setContent('');
       setSuggestedAt('');
       setMediaPath('');
+      setPlatform('facebook');
     }
   }, [editCopy, isOpen]);
 
@@ -52,6 +55,7 @@ export default function CreateCopyModal({ isOpen, onClose, onSuccess, editCopy }
           .update({ 
             name, 
             content,
+            platform,
             suggested_at: suggestedAt ? new Date(suggestedAt).toISOString() : null,
             media_path: mediaPath || null
           })
@@ -63,6 +67,7 @@ export default function CreateCopyModal({ isOpen, onClose, onSuccess, editCopy }
             user_id: user.id, 
             name, 
             content,
+            platform,
             suggested_at: suggestedAt ? new Date(suggestedAt).toISOString() : null,
             media_path: mediaPath || null
           }
@@ -94,7 +99,7 @@ export default function CreateCopyModal({ isOpen, onClose, onSuccess, editCopy }
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="relative w-full max-w-lg bg-white rounded-[2.5rem] p-10 shadow-2xl"
+            className="relative w-full max-w-lg bg-white rounded-[2.5rem] p-10 shadow-2xl overflow-y-auto max-h-[90vh]"
           >
             <div className="mb-8">
               <h2 className="text-2xl font-black text-slate-900 font-headline">
@@ -104,6 +109,26 @@ export default function CreateCopyModal({ isOpen, onClose, onSuccess, editCopy }
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="space-y-3">
+                <label className="text-[10px] font-black uppercase text-slate-400 px-1 tracking-widest">Red Social</label>
+                <div className="flex gap-2 p-1 bg-slate-50 rounded-2xl">
+                  {['facebook', 'instagram', 'both'].map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPlatform(p)}
+                      className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                        platform === p 
+                          ? 'bg-white shadow-sm text-indigo-600' 
+                          : 'text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      {p === 'both' ? 'Ambas (FB+IG)' : p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase text-slate-400 px-1 tracking-widest">Nombre de la Plantilla</label>
                 <input 

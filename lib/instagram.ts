@@ -71,7 +71,8 @@ export async function publishToInstagram(
 
     if (mediaType === 'video') {
       params.append('video_url', mediaUrl);
-      params.append('media_type', 'VIDEO');
+      params.append('media_type', 'REELS'); // VIDEO is deprecated; use REELS for feed videos
+      params.append('share_to_feed', 'true');
     } else {
       params.append('image_url', mediaUrl);
     }

@@ -7,571 +7,308 @@ import CreatePostModal from '../components/CreatePostModal';
 interface Post {
   id: string;
   caption: string;
-  custom_caption?: string;
-  copies?: { name: string; content: string } | null;
-  copy_id?: string | null;
   image_path: string;
-  scheduled_at: string;
-  status: 'scheduled' | 'published' | 'failed' | 'pending' | 'processing';
   platform: string;
-  facebook_pages?: { page_name: string } | null;
-  instagram_accounts?: { username: string } | null;
-  instagram_account_id?: string | null;
-  facebook_page_id?: string | null;
-  campaign_id?: string | null;
+  status: 'scheduled' | 'published' | 'failed' | 'pending';
+  scheduled_at: string;
+  facebook_page_id?: string;
+  instagram_account_id?: string;
+  facebook_pages?: { page_name: string };
+  instagram_accounts?: { username: string };
 }
 
-interface Account {
+interface FacebookPage {
   id: string;
-  name: string;
-  platform: 'facebook' | 'instagram';
+  page_name: string;
 }
 
-function MediaPreview({ path }: { path: string }) {
-  const [url, setUrl] = useState<string>('');
-  const isVideo = /\.(mp4|mov|avi|wmv|flv|webm|mkv)$/i.test(path);
-
-  useEffect(() => {
-    if (path.startsWith('http')) {
-      setUrl(path);
-      return;
-    }
-
-    let objectUrl: string;
-    const loadImg = async () => {
-      try {
-        const { data, error } = await supabase.storage.from('posts').download(path);
-        if (error) throw error;
-        if (data) {
-          objectUrl = URL.createObjectURL(data);
-          setUrl(objectUrl);
-        }
-      } catch (err) {
-        console.error('Error cargando preview:', err);
-      }
-    };
-    loadImg();
-    return () => {
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [path]);
-
-  if (!url) {
-    return (
-      <div className="w-full h-full bg-slate-100 flex items-center justify-center">
-        <span className="material-symbols-outlined text-slate-300 animate-pulse">
-          {isVideo ? 'videocam' : 'image'}
-        </span>
-      </div>
-    );
-  }
-
-  if (isVideo) {
-    return (
-      <video src={url} className="w-full h-full object-cover" muted loop onMouseOver={(e) => e.currentTarget.play()} onMouseOut={(e) => e.currentTarget.pause()} />
-    );
-  }
-
-  return <img src={url} alt="Post media" className="w-full h-full object-cover" />;
+interface InstagramAccount {
+  id: string;
+  username: string;
 }
 
 export default function ScheduledPosts() {
   const { user } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [activeAccountId, setActiveAccountId] = useState<string | 'all'>('all');
+  
+  // Accounts for filtering
+  const [facebookPages, setFacebookPages] = useState<FacebookPage[]>([]);
+  const [instagramAccounts, setInstagramAccounts] = useState<InstagramAccount[]>([]);
+  
+  // Filters
+  const [filterAccount, setFilterAccount] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  const filteredPosts = posts.filter(p => {
-    if (activeAccountId === 'all') return true;
-    const account = accounts.find(a => a.id === activeAccountId);
-    if (!account) return true;
-    
-    if (account.platform === 'facebook') {
-      return (p.platform === 'facebook' || p.platform === 'both') && p.facebook_page_id === activeAccountId;
-    } else {
-      return (p.platform === 'instagram' || p.platform === 'both') && p.instagram_account_id === activeAccountId;
+  useEffect(() => {
+    if (user) {
+      fetchPosts();
+      fetchAccounts();
     }
-  });
+  }, [user, filterAccount, statusFilter]);
 
-  const getPostsCountForAccount = (accountId: string | 'all') => {
-    if (accountId === 'all') return posts.length;
-    const account = accounts.find(a => a.id === accountId);
-    if (!account) return 0;
-    return posts.filter(p => {
-      if (account.platform === 'facebook') {
-        return (p.platform === 'facebook' || p.platform === 'both') && p.facebook_page_id === accountId;
-      } else {
-        return (p.platform === 'instagram' || p.platform === 'both') && p.instagram_account_id === accountId;
-      }
-    }).length;
+  const fetchAccounts = async () => {
+    const [pagesRes, igRes] = await Promise.all([
+      supabase.from('facebook_pages').select('id, page_name').eq('user_id', user?.id),
+      supabase.from('instagram_accounts').select('id, username').eq('user_id', user?.id)
+    ]);
+    if (pagesRes.data) setFacebookPages(pagesRes.data);
+    if (igRes.data) setInstagramAccounts(igRes.data);
   };
 
   const fetchPosts = async () => {
-    if (!user) return;
     setLoading(true);
     try {
-      const [postsRes, pagesRes, igRes] = await Promise.all([
-        supabase
-          .from('posts')
-          .select('*, copies(name, content), facebook_pages(page_name), instagram_accounts(username)')
-          .eq('user_id', user.id)
-          .order('scheduled_at', { ascending: true }),
-        supabase.from('facebook_pages').select('id, page_name').eq('user_id', user.id).eq('is_active', true),
-        supabase.from('instagram_accounts').select('id, username').eq('user_id', user.id).eq('is_active', true)
-      ]);
+      let query = supabase
+        .from('posts')
+        .select(`
+          *,
+          facebook_pages(page_name),
+          instagram_accounts(username)
+        `)
+        .eq('user_id', user?.id)
+        .order('scheduled_at', { ascending: true });
 
-      if (postsRes.error) throw postsRes.error;
-      
-      setPosts(postsRes.data || []);
-
-      const loadedAccounts: Account[] = [];
-      if (pagesRes.data) {
-        loadedAccounts.push(...pagesRes.data.map(p => ({ id: p.id, name: p.page_name, platform: 'facebook' as const })));
+      if (statusFilter !== 'all') {
+        query = query.eq('status', statusFilter);
       }
-      if (igRes.data) {
-        loadedAccounts.push(...igRes.data.map(ig => ({ id: ig.id, name: `@${ig.username}`, platform: 'instagram' as const })));
-      }
-      setAccounts(loadedAccounts);
 
-    } catch (error: any) {
-      console.error('Error fetching posts or accounts:', error.message);
+      if (filterAccount !== 'all') {
+        if (filterAccount.startsWith('fb_')) {
+          query = query.eq('facebook_page_id', filterAccount.replace('fb_', ''));
+        } else if (filterAccount.startsWith('ig_')) {
+          query = query.eq('instagram_account_id', filterAccount.replace('ig_', ''));
+        }
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setPosts(data || []);
+    } catch (error) {
+      console.error('Error fetching posts:', error);
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchPosts();
-  }, [user]);
 
   const handleDelete = async (id: string) => {
-    if (!confirm('¿Estás seguro de que quieres eliminar esta publicación?')) return;
-
+    if (!confirm('¿Estás seguro de eliminar esta publicación?')) return;
     try {
-      const { error, count } = await supabase
-        .from('posts')
-        .delete({ count: 'exact' })
-        .eq('id', id)
-        .eq('user_id', user?.id);
-
+      const { error } = await supabase.from('posts').delete().eq('id', id);
       if (error) throw error;
-      
-      if (count === 0) {
-        alert('No se pudo eliminar la publicación. Es posible que ya no exista o no tengas permisos.');
-        return;
-      }
-
-      setPosts((prev: Post[]) => prev.filter((p: Post) => p.id !== id));
-      if (selectedPost?.id === id) setSelectedPost(null);
+      setPosts(posts.filter(p => p.id !== id));
     } catch (error: any) {
-      alert('Error al eliminar: ' + error.message);
-    }
-  };
-
-  const handleApproveAll = async () => {
-    if (!user) return;
-    const pendingPosts = filteredPosts.filter((p: Post) => p.status === 'pending');
-    if (pendingPosts.length === 0) {
-      alert('No hay publicaciones pendientes por aprobar en esta selección.');
-      return;
-    }
-
-    if (!confirm(`¿Aprobar ${pendingPosts.length} publicaciones pendientes?`)) return;
-
-    setLoading(true);
-    try {
-      const pendingIds = pendingPosts.map(p => p.id);
-      const { error } = await supabase
-        .from('posts')
-        .update({ status: 'scheduled' })
-        .in('id', pendingIds);
-
-      if (error) throw error;
-      
-      setPosts((prev: Post[]) => prev.map((p: Post) => 
-        pendingIds.includes(p.id) ? { ...p, status: 'scheduled' as const } : p
-      ));
-      await fetchPosts(); // Refresh to ensure UI is in sync
-    } catch (error: any) {
-      alert('Error al aprobar todos: ' + error.message);
-    } finally {
-      setLoading(false);
+      alert('Error: ' + error.message);
     }
   };
 
   const handleApprove = async (id: string) => {
-    if (!user) return;
-    setLoading(true);
     try {
-      const { error } = await supabase
-        .from('posts')
-        .update({ status: 'scheduled' })
-        .eq('id', id)
-        .eq('user_id', user.id);
-
+      const { error } = await supabase.from('posts').update({ status: 'scheduled' }).eq('id', id);
       if (error) throw error;
-      
-      setPosts((prev: Post[]) => prev.map((p: Post) => 
-        p.id === id ? { ...p, status: 'scheduled' as const } : p
-      ));
+      fetchPosts();
     } catch (error: any) {
-      alert('Error al aprobar: ' + error.message);
-    } finally {
-      setLoading(false);
+      alert('Error: ' + error.message);
     }
   };
 
-  const handleEdit = (post: Post) => {
-    setEditingPost(post);
-    setIsModalOpen(true);
-  };
+  // Group posts by date
+  const groupedPosts = posts.reduce((groups: any, post) => {
+    const date = new Date(post.scheduled_at).toLocaleDateString('es-ES', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+    if (!groups[date]) groups[date] = [];
+    groups[date].push(post);
+    return groups;
+  }, {});
 
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="space-y-12 pb-20"
+      className="px-4 sm:px-0"
     >
-      {/* Header */}
-      <div className="flex justify-between items-end">
+      <div className="mb-8 sm:mb-12 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-6">
         <div>
-          <h2 className="text-4xl font-black tracking-tight text-slate-900 font-headline">Posts Programados</h2>
-          <p className="text-slate-500 font-medium">Gestiona tu calendario y aprueba las publicaciones pendientes.</p>
+          <div className="flex items-center gap-2 text-slate-400 text-[10px] sm:text-xs font-bold tracking-widest uppercase mb-2">
+            <span>Contenido</span>
+            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+            <span className="text-primary">Programadas</span>
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-on-surface font-headline leading-tight">
+            Calendario de Publicaciones
+          </h2>
+          <p className="text-slate-500 mt-2 font-medium text-sm sm:text-base">Visualiza y gestiona tu estrategia de contenido.</p>
         </div>
-        <div className="flex gap-3">
-          {filteredPosts.some(p => p.status === 'pending') && (
-            <button 
-              onClick={handleApproveAll}
-              disabled={loading}
-              className="px-6 py-4 bg-amber-500 text-white font-black rounded-2xl hover:bg-amber-600 transition-all flex items-center gap-2 shadow-lg shadow-amber-500/20 active:scale-95 translate-y-[-2px] disabled:opacity-60"
-            >
-              <span className="material-symbols-outlined text-[18px]">task_alt</span>
-              <span className="text-sm uppercase tracking-widest font-bold">Aprobar Todo</span>
-              <span className="ml-1 bg-white/20 text-white text-xs font-black px-2 py-0.5 rounded-full">
-                {filteredPosts.filter((p: Post) => p.status === 'pending').length}
-              </span>
-            </button>
-          )}
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="px-6 py-4 bg-slate-900 text-white font-black rounded-2xl hover:bg-indigo-600 transition-all flex items-center gap-2 shadow-xl shadow-slate-900/10 active:scale-95 translate-y-[-2px]"
-          >
-            <span className="material-symbols-outlined text-[18px]">add</span>
-            <span className="text-sm uppercase tracking-widest font-bold">Crear Post</span>
-          </button>
+        <button 
+          onClick={() => { setEditingPost(null); setShowCreateModal(true); }}
+          className="w-full sm:w-auto px-6 py-3 bg-primary text-white font-bold rounded-2xl hover:translate-y-[-1px] transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
+        >
+          <span className="material-symbols-outlined text-[20px]">add</span>
+          <span className="text-sm">Programar Nuevo</span>
+        </button>
+      </div>
+
+      {/* Filters Toolbar */}
+      <div className="mb-8 flex flex-col lg:flex-row gap-4">
+        <div className="flex-1 flex flex-col sm:flex-row gap-4">
+           <div className="relative flex-1">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 text-sm">filter_alt</span>
+              <select 
+                value={filterAccount}
+                onChange={(e) => setFilterAccount(e.target.value)}
+                className="w-full pl-12 pr-6 py-4 bg-white border border-slate-100 rounded-2xl shadow-sm focus:ring-2 focus:ring-primary/10 transition-all text-[10px] sm:text-xs font-black uppercase tracking-widest appearance-none"
+              >
+                <option value="all">Todas las cuentas</option>
+                <optgroup label="Facebook Pages">
+                  {facebookPages.map(p => <option key={p.id} value={`fb_${p.id}`}>{p.page_name}</option>)}
+                </optgroup>
+                <optgroup label="Instagram Accounts">
+                  {instagramAccounts.map(ig => <option key={ig.id} value={`ig_${ig.id}`}>@{ig.username}</option>)}
+                </optgroup>
+              </select>
+           </div>
+           
+           <div className="relative flex-1">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 text-sm">category</span>
+              <select 
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full pl-12 pr-6 py-4 bg-white border border-slate-100 rounded-2xl shadow-sm focus:ring-2 focus:ring-primary/10 transition-all text-[10px] sm:text-xs font-black uppercase tracking-widest appearance-none"
+              >
+                <option value="all">Cualquier Estado</option>
+                <option value="scheduled">Programados</option>
+                <option value="published">Publicados</option>
+                <option value="pending">Pendientes</option>
+                <option value="failed">Fallidos</option>
+              </select>
+           </div>
         </div>
       </div>
 
-      {/* Accounts Filter */}
-      {!loading && accounts.length > 0 && (
-        <div className="flex flex-wrap items-center gap-4 bg-slate-50 p-2 rounded-[2rem] border border-slate-100 w-fit">
-          <button
-            onClick={() => setActiveAccountId('all')}
-            className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm transition-all ${
-              activeAccountId === 'all' 
-                ? 'bg-white text-slate-800 shadow-sm border border-slate-200' 
-                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50 border border-transparent'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">grid_view</span>
-            Todas las Cuentas
-            <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-black ${activeAccountId === 'all' ? 'bg-slate-100 text-slate-600' : 'bg-slate-200/50 text-slate-400'}`}>
-              {getPostsCountForAccount('all')}
-            </span>
-          </button>
-
-          {accounts.map(acc => (
-            <button
-              key={acc.id}
-              onClick={() => setActiveAccountId(acc.id)}
-              className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm transition-all ${
-                activeAccountId === acc.id
-                  ? acc.platform === 'facebook' ? 'bg-white text-blue-600 shadow-sm border border-blue-100' : 'bg-white text-rose-500 shadow-sm border border-rose-100'
-                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50 border border-transparent'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">
-                {acc.platform === 'facebook' ? 'thumb_up' : 'photo_camera'}
-              </span>
-              {acc.name}
-              <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-black ${
-                activeAccountId === acc.id
-                  ? acc.platform === 'facebook' ? 'bg-blue-50 text-blue-600' : 'bg-rose-50 text-rose-500'
-                  : 'bg-slate-200/50 text-slate-400'
-              }`}>
-                {getPostsCountForAccount(acc.id)}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <CreatePostModal 
-        isOpen={isModalOpen} 
-        onClose={() => {
-          setIsModalOpen(false);
-          setEditingPost(null);
-        }} 
-        onSuccess={fetchPosts} 
-        prefill={editingPost ? {
-          editId: editingPost.id,
-          caption: editingPost.custom_caption || editingPost.caption,
-          mediaUrl: editingPost.image_path,
-          platform: editingPost.platform,
-          status: editingPost.status,
-          facebookPageId: editingPost.facebook_page_id || undefined,
-          instagramAccountId: editingPost.instagram_account_id || undefined,
-          campaignId: editingPost.campaign_id || undefined
-        } : undefined}
-      />
-
-      {/* Grid of Posts */}
       {loading ? (
-        <div className="text-center py-24 text-slate-400 font-bold uppercase tracking-[0.2em] animate-pulse">Cargando publicaciones...</div>
-      ) : filteredPosts.length === 0 ? (
-        <div className="text-center py-24 bg-slate-50 rounded-[3rem] border-2 border-dashed border-slate-200">
-          <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
-            <span className="material-symbols-outlined text-4xl text-slate-300">post_add</span>
-          </div>
-          <p className="text-slate-500 font-black text-xl mb-4">No hay publicaciones programadas para esta cuenta aún.</p>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="text-indigo-600 font-black text-sm uppercase tracking-widest hover:underline"
-          >
-            Crea tu primera publicación ahora
-          </button>
+        <div className="py-20 flex justify-center">
+           <div className="w-10 h-10 border-4 border-primary/10 border-t-primary rounded-full animate-spin" />
+        </div>
+      ) : posts.length === 0 ? (
+        <div className="bg-white rounded-[2.5rem] p-12 sm:p-20 text-center border border-slate-100 shadow-sm">
+           <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mx-auto mb-6">
+              <span className="material-symbols-outlined text-4xl text-slate-300">calendar_today</span>
+           </div>
+           <h3 className="text-lg font-bold text-slate-900 mb-2">No hay publicaciones</h3>
+           <p className="text-slate-500 text-sm max-w-xs mx-auto mb-8">No tienes publicaciones que coincidan con tus filtros actuales.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {filteredPosts.map((post) => (
-            <div 
-              key={post.id} 
-              onClick={() => setSelectedPost(post)}
-              className="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden group hover:shadow-xl hover:translate-y-[-4px] transition-all duration-300 cursor-pointer"
-            >
-              <div className="aspect-square relative overflow-hidden">
-                <MediaPreview path={post.image_path} />
-                
-                {/* Status Overlay */}
-                <div className="absolute top-4 left-4 z-10">
-                  <span className={`px-3 py-1 text-[10px] font-black rounded-full uppercase tracking-wider shadow-sm border ${
-                    post.status === 'published' ? 'bg-emerald-500 text-white border-emerald-400' :
-                    post.status === 'failed' ? 'bg-rose-500 text-white border-rose-400' :
-                    post.status === 'pending' ? 'bg-amber-500 text-white border-amber-400' :
-                    post.status === 'processing' ? 'bg-indigo-500 text-white border-indigo-400 animate-pulse' :
-                    'bg-sky-500 text-white border-sky-400'
-                  }`}>
-                    {post.status === 'published' ? 'Publicado' : 
-                     post.status === 'failed' ? 'Error' :
-                     post.status === 'pending' ? 'Pendiente' :
-                     post.status === 'processing' ? 'Procesando...' :
-                     'Programado'}
-                  </span>
-                </div>
-
-                {/* Platform Overlay */}
-                <div className="absolute top-4 right-4 z-10">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white shadow-sm ${
-                    post.platform === 'facebook' ? 'bg-blue-600' : 'bg-gradient-to-tr from-amber-400 via-rose-500 to-purple-600'
-                  }`}>
-                    <span className="material-symbols-outlined text-[18px]">
-                      {post.platform === 'facebook' ? 'thumb_up' : 'photo_camera'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Hover actions */}
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
-                  <span className="material-symbols-outlined text-white text-4xl">visibility</span>
-                </div>
+        <div className="space-y-12 lg:space-y-16">
+          {Object.entries(groupedPosts).map(([date, datePosts]: [string, any]) => (
+            <div key={date} className="space-y-6 sm:space-y-8">
+              <div className="flex items-center gap-6">
+                 <h3 className="text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] text-slate-400 whitespace-nowrap">{date}</h3>
+                 <div className="h-px bg-slate-100 flex-1" />
               </div>
 
-              <div className="p-8 space-y-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                      {new Date(post.scheduled_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
-                    </p>
-                    <p className="text-2xl font-black text-slate-800">
-                      {new Date(post.scheduled_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                    <p className="text-[10px] font-bold text-indigo-600 mt-1 uppercase tracking-tight">
-                      {post.platform === 'facebook' 
-                        ? (post.facebook_pages?.page_name || 'Facebook Page') 
-                        : `@${post.instagram_accounts?.username || 'Instagram'}`}
-                    </p>
-                  </div>
-                  {post.copies && (
-                    <span className="px-2 py-1 bg-indigo-50 text-indigo-600 text-[10px] font-black rounded-lg uppercase tracking-tight">
-                      Copy: {post.copies.name}
-                    </span>
-                  )}
-                </div>
-                
-                <p className="text-sm text-slate-500 font-medium line-clamp-2 italic leading-relaxed">
-                  {post.copies ? 'Contenido del copy guardado...' : (post.custom_caption || post.caption || 'Sin texto')}
-                </p>
-
-                <div className="pt-2 flex gap-3">
-                  {post.status === 'pending' && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleApprove(post.id); }}
-                      className="flex-1 py-3 bg-amber-50 text-amber-700 rounded-xl flex items-center justify-center gap-2 hover:bg-amber-100 transition-colors text-xs font-black uppercase tracking-wider"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">task_alt</span>
-                      <span>Aprobar</span>
-                    </button>
-                  )}
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); handleEdit(post); }}
-                    className="w-12 py-3 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-100 transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">edit</span>
-                  </button>
-                  <button 
-
-                    onClick={(e) => { e.stopPropagation(); handleDelete(post.id); }}
-                    className="w-12 py-3 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100 transition-colors"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">delete</span>
-                  </button>
-                </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+                {datePosts.map((post: Post) => (
+                  <PostCard 
+                    key={post.id} 
+                    post={post} 
+                    onDelete={handleDelete}
+                    onEdit={() => { setEditingPost(post); setShowCreateModal(true); }}
+                    onApprove={handleApprove}
+                  />
+                ))}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Detail Modal */}
-      <AnimatePresence>
-        {selectedPost && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedPost(null)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-md"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-4xl bg-white rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row max-h-[90vh]"
-            >
-              {/* Media Section */}
-              <div className="w-full md:w-1/2 bg-slate-900 flex items-center justify-center relative min-h-[300px]">
-                <MediaPreview path={selectedPost.image_path} />
-                <button 
-                  onClick={() => setSelectedPost(null)}
-                  className="absolute top-6 left-6 w-10 h-10 bg-white/20 hover:bg-white/40 text-white rounded-full flex items-center justify-center backdrop-blur-sm transition-colors md:hidden"
-                >
-                  <span className="material-symbols-outlined">close</span>
-                </button>
-              </div>
+      <CreatePostModal 
+        isOpen={showCreateModal}
+        onClose={() => { setShowCreateModal(false); setEditingPost(null); }}
+        onSuccess={() => { fetchPosts(); setShowCreateModal(false); setEditingPost(null); }}
+        prefill={editingPost ? {
+          editId: editingPost.id,
+          caption: editingPost.caption,
+          mediaUrl: post.image_path,
+          platform: editingPost.platform,
+          status: editingPost.status,
+          facebookPageId: editingPost.facebook_page_id,
+          instagramAccountId: editingPost.instagram_account_id,
+          scheduledAt: editingPost.scheduled_at
+        } : undefined}
+      />
+    </motion.div>
+  );
+}
 
-              {/* Info Section */}
-              <div className="w-full md:w-1/2 p-10 md:p-12 overflow-y-auto">
-                <div className="flex justify-between items-start mb-8">
-                  <div>
-                    <h3 className="text-3xl font-black text-slate-800 font-headline mb-1">Detalles del Post</h3>
-                    <div className="flex items-center gap-4">
-                      <span className={`px-3 py-1 text-[10px] font-black rounded-full uppercase tracking-wider shadow-sm border ${
-                        selectedPost.status === 'published' ? 'bg-emerald-500 text-white border-emerald-400' :
-                        selectedPost.status === 'failed' ? 'bg-rose-500 text-white border-rose-400' :
-                        selectedPost.status === 'pending' ? 'bg-amber-500 text-white border-amber-400' :
-                        selectedPost.status === 'processing' ? 'bg-indigo-500 text-white border-indigo-400 animate-pulse' :
-                        'bg-sky-500 text-white border-sky-400'
-                      }`}>
-                        {selectedPost.status === 'published' ? 'Publicado' : 
-                         selectedPost.status === 'failed' ? 'Error' :
-                         selectedPost.status === 'pending' ? 'Pendiente' :
-                         selectedPost.status === 'processing' ? 'Procesando...' :
-                         'Programado'}
-                      </span>
-                      <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">
-                        {selectedPost.platform === 'facebook' 
-                          ? `FB: ${selectedPost.facebook_pages?.page_name || '?'}` 
-                          : `IG: @${selectedPost.instagram_accounts?.username || '?'}`}
-                      </span>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => setSelectedPost(null)}
-                    className="w-10 h-10 text-slate-400 hover:text-slate-900 transition-colors hidden md:flex items-center justify-center"
-                  >
-                    <span className="material-symbols-outlined text-3xl">close</span>
-                  </button>
-                </div>
+function PostCard({ post, onDelete, onEdit, onApprove }: { post: Post, onDelete: (id: string) => void, onEdit: () => void, onApprove: (id: string) => void }) {
+  const statusColors = {
+    scheduled: 'bg-emerald-500',
+    published: 'bg-primary',
+    failed: 'bg-rose-500',
+    pending: 'bg-amber-500'
+  };
 
-                <div className="space-y-8">
-                  <div className="flex gap-10">
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</p>
-                      <p className="text-lg font-black text-slate-700">
-                        {new Date(selectedPost.scheduled_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' })}
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Hora</p>
-                      <p className="text-lg font-black text-slate-700">
-                        {new Date(selectedPost.scheduled_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  </div>
+  const accountInfo = post.facebook_pages?.page_name || (post.instagram_accounts?.username ? `@${post.instagram_accounts?.username}` : post.platform);
 
-                  {selectedPost.copies && (
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Plantilla (Copy)</p>
-                      <div className="px-4 py-2 bg-indigo-50 rounded-xl text-indigo-700 font-bold inline-block border border-indigo-100">
-                        {selectedPost.copies.name}
-                      </div>
-                    </div>
-                  )}
+  return (
+    <motion.div 
+      layout
+      className="group bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-2xl hover:border-primary/10 transition-all overflow-hidden flex flex-col"
+    >
+      <div className="relative aspect-video sm:aspect-[4/3] bg-slate-100 overflow-hidden">
+        <img src={post.image_path} alt="Post content" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+        <div className="absolute top-4 left-4 flex gap-2">
+           <div className={`${statusColors[post.status]} text-white text-[8px] sm:text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-lg`}>
+             {post.status}
+           </div>
+           <div className="bg-white/90 backdrop-blur-md text-[#1877F2] text-[8px] sm:text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5">
+             <span className="material-symbols-outlined text-[12px]">{post.platform === 'instagram' ? 'photo_camera' : 'public'}</span>
+             {accountInfo}
+           </div>
+        </div>
+        
+        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+             <button onClick={onEdit} className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-slate-900 hover:bg-primary hover:text-white transition-all transform translate-y-4 group-hover:translate-y-0 duration-300">
+               <span className="material-symbols-outlined text-[20px]">edit</span>
+             </button>
+             <button onClick={() => onDelete(post.id)} className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-slate-900 hover:bg-rose-500 hover:text-white transition-all transform translate-y-4 group-hover:translate-y-0 duration-300 delay-75">
+               <span className="material-symbols-outlined text-[20px]">delete_forever</span>
+             </button>
+        </div>
+      </div>
 
-                  <div className="space-y-2">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Contenido</p>
-                    <div className="p-6 bg-slate-50 rounded-3xl text-slate-600 font-medium whitespace-pre-wrap leading-relaxed border border-slate-100 min-h-[120px]">
-                      {selectedPost.copies ? selectedPost.copies.content : (selectedPost.custom_caption || selectedPost.caption || 'Sin texto')}
-                    </div>
-                  </div>
+      <div className="p-6 sm:p-8 flex-1 flex flex-col">
+        <div className="flex items-center gap-3 mb-4">
+           <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400">
+              <span className="material-symbols-outlined text-[20px]">schedule</span>
+           </div>
+           <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Programado para</p>
+              <p className="text-xs font-bold text-slate-900">{new Date(post.scheduled_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} hrs</p>
+           </div>
+        </div>
 
-                  <div className="flex gap-4 pt-4">
-                    {selectedPost.status === 'pending' && (
-                      <button 
-                        onClick={() => handleApprove(selectedPost.id)}
-                        className="flex-1 py-4 bg-amber-500 text-white rounded-2xl flex items-center justify-center gap-2 hover:bg-amber-600 transition-all font-black uppercase tracking-widest text-xs shadow-lg shadow-amber-500/20 active:scale-95"
-                      >
-                        <span className="material-symbols-outlined">task_alt</span>
-                        <span>Aprobar Publicación</span>
-                      </button>
-                    )}
-                    <button 
-                      onClick={() => handleEdit(selectedPost)}
-                      className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all font-black uppercase tracking-widest text-xs shadow-lg shadow-indigo-600/20 active:scale-95"
-                    >
-                      <span className="material-symbols-outlined">edit</span>
-                      <span>Editar</span>
-                    </button>
-                    <button 
+        <p className="text-slate-600 text-sm font-medium leading-relaxed italic line-clamp-3 mb-6">
+          "{post.caption}"
+        </p>
 
-                      onClick={() => handleDelete(selectedPost.id)}
-                      className="px-8 py-4 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center gap-2 hover:bg-rose-100 transition-all font-black uppercase tracking-widest text-xs active:scale-95"
-                    >
-                      <span className="material-symbols-outlined">delete</span>
-                      <span>Eliminar</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </div>
+        {post.status === 'pending' && (
+          <button 
+            onClick={() => onApprove(post.id)}
+            className="mt-auto w-full py-3 bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+          >
+            <span className="material-symbols-outlined text-sm">check_circle</span>
+            Aprobar Ahora
+          </button>
         )}
-      </AnimatePresence>
+      </div>
     </motion.div>
   );
 }

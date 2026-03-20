@@ -17,76 +17,105 @@ const managementItems = [
   { icon: 'settings', label: 'Configuración', path: '/settings' },
 ];
 
-export default function Sidebar() {
+interface SidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const { user, signOut } = useAuth();
   const location = useLocation();
 
   return (
-    <aside className="fixed left-0 top-0 h-screen w-[240px] bg-slate-50 dark:bg-slate-900/50 flex flex-col py-6 px-5 space-y-2 font-manrope text-sm font-medium tracking-tight z-50">
-      <div className="mb-10 px-2 flex items-center gap-3">
-        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white">
-          <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>auto_awesome</span>
-        </div>
-        <div>
-          <h1 className="text-xl font-bold tracking-tighter text-indigo-600 dark:text-indigo-400">The Curator</h1>
-          <p className="text-[10px] uppercase tracking-[0.1em] text-slate-500">Plataforma de Automatización</p>
-        </div>
-      </div>
+    <>
+      {/* Backdrop */}
+      <div 
+        className={clsx(
+          "fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[45] transition-opacity duration-300",
+          isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}
+        onClick={onClose}
+      />
 
-      <nav className="flex-1 px-4 mt-8 space-y-8">
-        <div>
-          <h3 className="px-4 text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-3">Principal</h3>
-          <div className="space-y-1">
-            {mainItems.map((item) => (
-              <SidebarItem key={item.path} item={item} isActive={location.pathname === item.path} />
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <h3 className="px-4 text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-3">Gestión</h3>
-          <div className="space-y-1">
-            {managementItems.map((item) => (
-              <SidebarItem key={item.path} item={item} isActive={location.pathname === item.path} />
-            ))}
-          </div>
-        </div>
-      </nav>
-
-      <div className="pt-6 mt-6 border-t border-slate-200 dark:border-slate-800">
+      <aside className={clsx(
+        "fixed left-0 top-0 h-screen w-[260px] bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 flex flex-col py-8 px-5 space-y-2 font-manrope text-sm font-medium tracking-tight z-50 transition-all duration-300 ease-in-out shadow-2xl shadow-slate-200/50",
+        isOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
+        {/* Close Button */}
         <button 
-          onClick={() => signOut()}
-          className="w-full flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all group"
+          onClick={onClose}
+          className="absolute top-6 right-5 p-2 text-slate-400 hover:text-primary transition-colors lg:hidden"
         >
-          <span className="material-symbols-outlined text-[20px] group-hover:rotate-12 transition-transform">logout</span>
-          <span className="font-bold">Cerrar Sesión</span>
+          <span className="material-symbols-outlined">close</span>
         </button>
-      </div>
-    </aside>
+
+        <div className="mb-10 px-2 flex items-center gap-3 group cursor-pointer">
+          <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-200 group-hover:scale-105 transition-transform">
+            <span className="material-symbols-outlined text-[28px]" style={{ fontVariationSettings: "'FILL' 1" }}>auto_awesome</span>
+          </div>
+          <div>
+            <h1 className="text-2xl font-black tracking-tighter text-indigo-600 dark:text-indigo-400 leading-none">FlowPost</h1>
+            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mt-1">Smart Automation</p>
+          </div>
+        </div>
+
+        <nav className="flex-1 space-y-8 overflow-y-auto no-scrollbar pr-2">
+          <div>
+            <h3 className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 mb-4 ml-1">Principal</h3>
+            <div className="space-y-1.5 font-headline">
+              {mainItems.map((item) => (
+                <SidebarItem key={item.path} item={item} isActive={location.pathname === item.path} onClick={onClose} />
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <h3 className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 mb-4 ml-1">Gestión</h3>
+            <div className="space-y-1.5 font-headline">
+              {managementItems.map((item) => (
+                <SidebarItem key={item.path} item={item} isActive={location.pathname === item.path} onClick={onClose} />
+              ))}
+            </div>
+          </div>
+        </nav>
+
+        <div className="pt-8 mt-auto border-t border-slate-100 dark:border-slate-800">
+          <button 
+            onClick={() => signOut()}
+            className="w-full flex items-center gap-3 px-5 py-4 text-slate-500 dark:text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-[1.25rem] transition-all group font-bold"
+          >
+            <div className="w-8 h-8 rounded-lg bg-slate-50 group-hover:bg-rose-100 flex items-center justify-center transition-colors">
+              <span className="material-symbols-outlined text-[20px] group-hover:rotate-12 transition-transform">logout</span>
+            </div>
+            <span>Cerrar Sesión</span>
+          </button>
+        </div>
+      </aside>
+    </>
   );
 }
 
-interface SidebarItemProps {
-  key?: string | number;
-  item: { icon: string; label: string; path: string };
-  isActive: boolean;
-}
-
-function SidebarItem({ item, isActive }: SidebarItemProps) {
+function SidebarItem({ item, isActive, onClick }: { item: any, isActive: boolean, onClick: () => void }) {
   return (
     <NavLink
       to={item.path}
+      onClick={onClick}
       className={clsx(
-        'flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200',
+        'flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-300 group',
         isActive
-          ? 'bg-white dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 shadow-sm'
-          : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/50 hover:translate-y-[-1px]'
+          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100'
+          : 'text-slate-500 hover:bg-slate-50 hover:text-indigo-600 hover:translate-x-1'
       )}
     >
-      <span className="material-symbols-outlined" style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>
-        {item.icon}
-      </span>
-      <span>{item.label}</span>
+      <div className={clsx(
+        "w-8 h-8 rounded-xl flex items-center justify-center transition-colors",
+        isActive ? "bg-white/20" : "bg-slate-50 group-hover:bg-indigo-50"
+      )}>
+        <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0" }}>
+          {item.icon}
+        </span>
+      </div>
+      <span className="font-bold tracking-tight">{item.label}</span>
     </NavLink>
   );
 }

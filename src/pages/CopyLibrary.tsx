@@ -111,13 +111,22 @@ export default function CopyLibrary() {
       // Pre-fetch all media to resolve filenames (batch lookup)
       const { data: allMedia } = await supabase
         .from('media')
-        .select('name, url')
+        .select('name, url, path')
         .eq('user_id', user.id);
 
+      // Build mapping by exact path and by filename
+      const mediaByExactPath = new Map<string, string>();
       const mediaByName = new Map<string, string>();
-      interface MediaRow { name: string; url: string; }
+      interface MediaRow { name: string; url: string; path: string; }
+      
       ((allMedia as MediaRow[]) || []).forEach((m) => {
-        mediaByName.set(m.name.toLowerCase(), m.url);
+        const lowerName = m.name.toLowerCase();
+        mediaByName.set(lowerName, m.url); // Fallback by name
+        
+        // Exact path map
+        if (m.path) {
+          mediaByExactPath.set(`${m.path}/${lowerName}`.toLowerCase(), m.url);
+        }
       });
 
       // Build posts array — one or two posts per copy depending on platform
@@ -130,8 +139,21 @@ export default function CopyLibrary() {
           if (copy.media_path.startsWith('http')) {
             imageUrl = copy.media_path;
           } else {
-            const fileName = copy.media_path.split('/').pop()?.toLowerCase() || '';
-            imageUrl = mediaByName.get(fileName) || '';
+            const parts = copy.media_path.split('/');
+            const rawFileName = parts.pop() || '';
+            const fileName = rawFileName.toLowerCase();
+            const hasFolder = parts.length > 0;
+            
+            if (hasFolder) {
+              let expectedPath = parts.join('/');
+              if (!expectedPath.startsWith('root')) {
+                expectedPath = `root/${expectedPath}`;
+              }
+              const exactKey = `${expectedPath}/${fileName}`.toLowerCase();
+              imageUrl = mediaByExactPath.get(exactKey) || mediaByName.get(fileName) || '';
+            } else {
+              imageUrl = mediaByName.get(fileName) || '';
+            }
           }
         }
 

@@ -24,7 +24,7 @@ export default function CopyLibrary() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editingCopy, setEditingCopy] = useState<Copy | null>(null);
   const [scheduleFromCopy, setScheduleFromCopy] = useState<Copy | null>(null);
-  const [sentCopyIds, setSentCopyIds] = useState<Set<string>>(new Set());
+  const [copyStatuses, setCopyStatuses] = useState<Map<string, 'active' | 'published'>>(new Map());
   const [sendingAll, setSendingAll] = useState(false);
   const [sendAllResult, setSendAllResult] = useState<{ sent: number; skipped: number } | null>(null);
 
@@ -38,12 +38,10 @@ export default function CopyLibrary() {
           .select('*')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false }),
-        // Fetch copy_ids that already have a pending or scheduled post
         supabase
           .from('posts')
-          .select('copy_id')
+          .select('copy_id, status')
           .eq('user_id', user.id)
-          .in('status', ['pending', 'scheduled'])
           .not('copy_id', 'is', null)
       ]);
 
@@ -51,7 +49,15 @@ export default function CopyLibrary() {
       setCopies((copiesRes.data as Copy[]) || []);
 
       if (postsRes.data) {
-        setSentCopyIds(new Set(postsRes.data.map((p: { copy_id: string }) => p.copy_id)));
+        const statusMap = new Map<string, 'active' | 'published'>();
+        postsRes.data.forEach((p: { copy_id: string; status: string }) => {
+          if (['pending', 'scheduled', 'processing'].includes(p.status)) {
+            statusMap.set(p.copy_id, 'active');
+          } else if (p.status === 'published' && statusMap.get(p.copy_id) !== 'active') {
+            statusMap.set(p.copy_id, 'published');
+          }
+        });
+        setCopyStatuses(statusMap);
       }
     } catch (error: any) {
       console.error('Error fetching copies:', error.message);
@@ -82,7 +88,7 @@ export default function CopyLibrary() {
 
   const handleSendAll = async () => {
     if (!user) return;
-    const unsentCopies = copies.filter((c: Copy) => !sentCopyIds.has(c.id));
+    const unsentCopies = copies.filter((c: Copy) => !copyStatuses.has(c.id));
     if (unsentCopies.length === 0) {
       alert('Todos los copies ya han sido enviados a programados.');
       return;
@@ -172,9 +178,9 @@ export default function CopyLibrary() {
       const { error } = await supabase.from('posts').insert(postsToInsert);
       if (error) throw error;
 
-      const newSent = new Set(Array.from(sentCopyIds));
-      unsentCopies.forEach((c: Copy) => newSent.add(c.id));
-      setSentCopyIds(newSent);
+      const newStatuses = new Map(copyStatuses);
+      unsentCopies.forEach((c: Copy) => newStatuses.set(c.id, 'active'));
+      setCopyStatuses(newStatuses);
       setSendAllResult({ sent: unsentCopies.length, skipped: copies.length - unsentCopies.length });
     } catch (error: any) {
       alert('Error al enviar: ' + error.message);
@@ -183,7 +189,7 @@ export default function CopyLibrary() {
     }
   };
 
-  const unsentCount = copies.filter((c: Copy) => !sentCopyIds.has(c.id)).length;
+  const unsentCount = copies.filter((c: Copy) => !copyStatuses.has(c.id)).length;
 
   return (
     <motion.div 
@@ -317,29 +323,38 @@ export default function CopyLibrary() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {copies.map((copy: Copy) => {
-            const isSent = sentCopyIds.has(copy.id);
             return (
-              <div key={copy.id} className={`bg-white p-8 rounded-[2.5rem] shadow-sm border flex flex-col justify-between hover:shadow-xl hover:translate-y-[-4px] transition-all duration-300 group relative overflow-hidden ${isSent ? 'border-emerald-100' : 'border-slate-100'}`}>
-                {/* Sent badge */}
-                {isSent && (
-                  <div className="absolute top-4 left-4 flex items-center gap-1 px-2 py-1 bg-emerald-50 border border-emerald-200 rounded-full z-20">
-                    <span className="material-symbols-outlined text-[12px] text-emerald-500">check_circle</span>
-                    <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Programado</span>
-                  </div>
-                )}
+              <div key={copy.id} className={`bg-white p-8 rounded-[2.5rem] shadow-sm border flex flex-col justify-between hover:shadow-xl hover:translate-y-[-4px] transition-all duration-300 group relative overflow-hidden ${copyStatuses.get(copy.id) === 'active' ? 'border-amber-100' : copyStatuses.get(copy.id) === 'published' ? 'border-emerald-100' : 'border-slate-100'}`}>
+                {/* Status Badges */}
+                <div className="absolute top-4 left-4 flex flex-col gap-1 z-20">
+                  {copyStatuses.get(copy.id) === 'active' && (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 rounded-full">
+                      <span className="material-symbols-outlined text-[12px] text-amber-500">pending_actions</span>
+                      <span className="text-[9px] font-black text-amber-600 uppercase tracking-wider">Programado</span>
+                    </div>
+                  )}
+                  {copyStatuses.get(copy.id) === 'published' && (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-emerald-50 border border-emerald-200 rounded-full">
+                      <span className="material-symbols-outlined text-[12px] text-emerald-500">check_circle</span>
+                      <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Publicado</span>
+                    </div>
+                  )}
+                </div>
 
                 <div className="space-y-4 relative z-10">
                   <div className="flex justify-between items-start">
-                    <h4 className={`font-black text-xl text-slate-900 font-headline leading-tight truncate ${isSent ? 'pr-4 mt-6' : 'pr-12'}`}>{copy.name}</h4>
+                    <h4 className={`font-black text-xl text-slate-900 font-headline leading-tight truncate ${copyStatuses.has(copy.id) ? 'pr-4 mt-6' : 'pr-12'}`}>{copy.name}</h4>
                     {/* Card hover actions */}
                     <div className="absolute top-0 right-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {!isSent && (
+                      {copyStatuses.get(copy.id) !== 'active' && (
                         <button 
                           onClick={() => setScheduleFromCopy(copy)}
-                          className="p-2 text-slate-400 hover:text-amber-500 transition-colors"
-                          title="Enviar a programados"
+                          className={`p-2 transition-colors ${copyStatuses.get(copy.id) === 'published' ? 'text-emerald-500 hover:text-emerald-600' : 'text-slate-400 hover:text-amber-500'}`}
+                          title={copyStatuses.get(copy.id) === 'published' ? "Reprogramar copy" : "Enviar a programados"}
                         >
-                          <span className="material-symbols-outlined text-[20px]">schedule_send</span>
+                          <span className="material-symbols-outlined text-[20px]">
+                            {copyStatuses.get(copy.id) === 'published' ? 'event_repeat' : 'schedule_send'}
+                          </span>
                         </button>
                       )}
                       <button 
@@ -386,19 +401,23 @@ export default function CopyLibrary() {
                   <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest shrink-0">
                     {new Date(copy.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
                   </span>
-                  {!isSent && (
+                  {copyStatuses.get(copy.id) !== 'active' && (
                     <button
                       onClick={() => setScheduleFromCopy(copy)}
-                      className="flex items-center gap-1 text-[10px] font-black text-amber-500 hover:text-amber-600 uppercase tracking-wider transition-colors opacity-0 group-hover:opacity-100"
+                      className={`flex items-center gap-1 text-[10px] font-black uppercase tracking-wider transition-colors opacity-0 group-hover:opacity-100 ${
+                        copyStatuses.get(copy.id) === 'published' ? 'text-emerald-500 hover:text-emerald-600' : 'text-amber-500 hover:text-amber-600'
+                      }`}
                     >
-                      <span className="material-symbols-outlined text-[14px]">schedule_send</span>
-                      Programar
+                      <span className="material-symbols-outlined text-[14px]">
+                        {copyStatuses.get(copy.id) === 'published' ? 'event_repeat' : 'schedule_send'}
+                      </span>
+                      {copyStatuses.get(copy.id) === 'published' ? 'Reprogramar' : 'Programar'}
                     </button>
                   )}
                 </div>
 
                 {/* Decorative gradient corner */}
-                <div className={`absolute -bottom-10 -right-10 w-24 h-24 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity ${isSent ? 'bg-emerald-50' : 'bg-indigo-50'}`}></div>
+                <div className={`absolute -bottom-10 -right-10 w-24 h-24 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity ${copyStatuses.get(copy.id) === 'published' ? 'bg-emerald-50' : 'bg-indigo-50'}`}></div>
               </div>
             );
           })}

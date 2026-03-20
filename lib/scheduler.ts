@@ -99,15 +99,19 @@ export async function processScheduledPosts() {
 
         console.log(`[Scheduler] Enviando ${mediaType} a Facebook (Page: ${(pageData as any).page_id})...`);
         
-        // Facebook permite binarios, así que bajamos el contenido
+        console.log(`[Scheduler] Descargando ${mediaType}: ${mediaPath}`);
         let mediaData: Blob;
         if (mediaPath.startsWith('http')) {
           const response = await fetch(mediaPath);
-          if (!response.ok) throw new Error(`Error R2: ${response.statusText}`);
+          if (!response.ok) {
+            throw new Error(`Error al descargar ${mediaType} desde R2 (${response.status}): ${response.statusText}`);
+          }
           mediaData = await response.blob();
         } else {
           const { data, error: downloadError } = await supabaseAdmin.storage.from('posts').download(mediaPath);
-          if (downloadError || !data) throw new Error(`Error Storage: ${downloadError?.message}`);
+          if (downloadError || !data) {
+            throw new Error(`Error al descargar ${mediaType} de Storage: ${downloadError?.message || 'Archivo no encontrado'}`);
+          }
           mediaData = data;
         }
 

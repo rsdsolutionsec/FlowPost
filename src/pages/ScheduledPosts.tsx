@@ -107,7 +107,8 @@ export default function ScheduledPosts() {
       const { error, count } = await supabase
         .from('posts')
         .delete({ count: 'exact' })
-        .eq('id', id);
+        .eq('id', id)
+        .eq('user_id', user?.id);
 
       if (error) throw error;
       
@@ -138,32 +139,19 @@ export default function ScheduledPosts() {
       const { error } = await supabase
         .from('posts')
         .update({ status: 'scheduled' })
-        .in('id', pendingPosts.map((p: Post) => p.id));
+        .eq('user_id', user.id)
+        .eq('status', 'pending');
 
       if (error) throw error;
       
       setPosts((prev: Post[]) => prev.map((p: Post) => 
-        p.status === 'pending' ? { ...p, status: 'scheduled' } : p
+        p.status === 'pending' ? { ...p, status: 'scheduled' as const } : p
       ));
       await fetchPosts(); // Refresh to ensure UI is in sync
     } catch (error: any) {
       alert('Error al aprobar todos: ' + error.message);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleApprove = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from('posts')
-        .update({ status: 'scheduled' })
-        .eq('id', id);
-      if (error) throw error;
-      setPosts(posts.map(p => p.id === id ? { ...p, status: 'scheduled' as const } : p));
-      if (selectedPost?.id === id) setSelectedPost({ ...selectedPost, status: 'scheduled' });
-    } catch (error: any) {
-      alert('Error al aprobar: ' + error.message);
     }
   };
 
@@ -329,6 +317,7 @@ export default function ScheduledPosts() {
                     <span className="material-symbols-outlined text-[18px]">edit</span>
                   </button>
                   <button 
+
                     onClick={(e) => { e.stopPropagation(); handleDelete(post.id); }}
                     className="w-12 py-3 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-100 transition-colors"
                   >
@@ -451,6 +440,7 @@ export default function ScheduledPosts() {
                       <span>Editar</span>
                     </button>
                     <button 
+
                       onClick={() => handleDelete(selectedPost.id)}
                       className="px-8 py-4 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center gap-2 hover:bg-rose-100 transition-all font-black uppercase tracking-widest text-xs active:scale-95"
                     >

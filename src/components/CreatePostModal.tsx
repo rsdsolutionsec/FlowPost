@@ -6,10 +6,10 @@ import { useAuth } from '../contexts/AuthContext';
 interface PrefillData {
   copyId?: string;
   copyName?: string;
-  scheduledAt?: string;    // ISO string from suggested_at
-  mediaUrl?: string;       // direct R2 public URL (http)
-  mediaPath?: string;      // relative path like 'campana_vistas/vista_mesero/2.PNG'
-  mediaFileName?: string;  // display name
+  scheduledAt?: string;
+  mediaUrl?: string; // If it's a direct URL (like from R2 or copy library)
+  mediaPath?: string; // If it's a storage path
+  mediaFileName?: string;
   editId?: string;         // If present, we are editing this post
   status?: string;         // original status
   platform?: string;       // original platform
@@ -126,7 +126,6 @@ interface InstagramAccount { id: string; username: string; }
 interface Campaign { id: string; name: string; }
 interface LibraryCopy { id: string; name: string; }
 interface MediaItem { id: string; name: string; url: string; mimetype: string; path: string; size: number; }
-
 export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }: CreatePostModalProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -209,6 +208,42 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
           if (prefill.mediaUrl) {
             setImageSource('library');
             setSelectedLibraryFile(prefill.mediaUrl || '');
+            setSelectedLibraryFileName(prefill.mediaFileName || prefill.mediaUrl.split('/').pop() || 'media');
+          }
+          // Auto-resolve from library by filename if a relative path is given
+          if (prefill.mediaPath && !prefill.mediaUrl) {
+            const fileName = prefill.mediaPath.split('/').pop();
+            if (fileName && user) {
+              const { data: mediaMatch } = await supabase
+                .from('media')
+                .select('url, name')
+                .eq('user_id', user.id)
+                .ilike('name', fileName)
+                .limit(1)
+                .single();
+              if (mediaMatch?.url) {
+                setImageSource('library');
+                setSelectedLibraryFile(mediaMatch.url);
+                setSelectedLibraryFileName(mediaMatch.name);
+              }
+            }
+          }
+        }
+
+        // Apply prefill data after loading
+        if (prefill) {
+          setUseReusableCopy(true);
+          setSelectedCopyId(prefill.copyId);
+          if (prefill.scheduledAt) {
+            const d = new Date(prefill.scheduledAt);
+            const offset = d.getTimezoneOffset() * 60000;
+            const local = new Date(d.getTime() - offset).toISOString().slice(0, 16);
+            setFormData(prev => ({ ...prev, scheduled_at: local }));
+          }
+          // Auto-select media: if direct URL provided, use it immediately
+          if (prefill.mediaUrl) {
+            setImageSource('library');
+            setSelectedLibraryFile(prefill.mediaUrl);
             setSelectedLibraryFileName(prefill.mediaFileName || prefill.mediaUrl.split('/').pop() || 'media');
           }
           // Auto-resolve from library by filename if a relative path is given

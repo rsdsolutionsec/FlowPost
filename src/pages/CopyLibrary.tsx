@@ -31,28 +31,29 @@ export default function CopyLibrary() {
     if (!user) return;
     setLoading(true);
     try {
-      const { data: copiesData, error: copiesError } = await supabase
-        .from('copies')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      const [copiesRes, postsRes] = await Promise.all([
+        supabase
+          .from('copies')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false }),
+        // Fetch copy_ids that already have a pending or scheduled post
+        supabase
+          .from('posts')
+          .select('copy_id')
+          .eq('user_id', user.id)
+          .in('status', ['pending', 'scheduled'])
+          .not('copy_id', 'is', null)
+      ]);
 
-      const { data: postsData, error: postsError } = await supabase
-        .from('posts')
-        .select('copy_id')
-        .eq('user_id', user.id)
-        .in('status', ['pending', 'scheduled'])
-        .not('copy_id', 'is', null);
+      if (copiesRes.error) throw copiesRes.error;
+      setCopies((copiesRes.data as Copy[]) || []);
 
-      if (copiesError) throw copiesError;
-      setCopies((copiesData as Copy[]) || []);
-
-      if (postsData) {
-        setSentCopyIds(new Set((postsData as { copy_id: string }[]).map(p => p.copy_id)));
+      if (postsRes.data) {
+        setSentCopyIds(new Set(postsRes.data.map((p: { copy_id: string }) => p.copy_id)));
       }
-    } catch (error) {
-      const err = error as Error;
-      console.error('Error fetching copies:', err.message);
+    } catch (error: any) {
+      console.error('Error fetching copies:', error.message);
     } finally {
       setLoading(false);
     }
@@ -68,9 +69,8 @@ export default function CopyLibrary() {
       const { error } = await supabase.from('copies').delete().eq('id', id);
       if (error) throw error;
       setCopies((prev: Copy[]) => prev.filter((c: Copy) => c.id !== id));
-    } catch (error) {
-      const err = error as Error;
-      alert('Error al eliminar: ' + err.message);
+    } catch (error: any) {
+      alert('Error al eliminar: ' + error.message);
     }
   };
 
@@ -160,9 +160,8 @@ export default function CopyLibrary() {
       unsentCopies.forEach((c: Copy) => newSent.add(c.id));
       setSentCopyIds(newSent);
       setSendAllResult({ sent: unsentCopies.length, skipped: copies.length - unsentCopies.length });
-    } catch (error) {
-      const err = error as Error;
-      alert('Error al enviar: ' + err.message);
+    } catch (error: any) {
+      alert('Error al enviar: ' + error.message);
     } finally {
       setSendingAll(false);
     }

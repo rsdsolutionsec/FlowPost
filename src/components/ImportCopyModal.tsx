@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../../lib/supabase';
 
 interface ParsedCopy {
   name: string;
@@ -25,7 +26,24 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
   const [preview, setPreview] = useState<ParsedCopy[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ imported: number; failed: number; errors: string[] } | null>(null);
+  const [pages, setPages] = useState<any[]>([]);
+  const [igAccounts, setIgAccounts] = useState<any[]>([]);
+  const [selectedDestinations, setSelectedDestinations] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen && user) {
+      const fetchAccounts = async () => {
+        const [pagesRes, igRes] = await Promise.all([
+          supabase.from('facebook_pages').select('id, page_name').eq('user_id', user.id).eq('is_active', true),
+          supabase.from('instagram_accounts').select('id, username').eq('user_id', user.id).eq('is_active', true)
+        ]);
+        if (pagesRes.data) setPages(pagesRes.data);
+        if (igRes.data) setIgAccounts(igRes.data);
+      };
+      fetchAccounts();
+    }
+  }, [isOpen, user]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -153,6 +171,52 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
 
       setResult(data);
       if (data.imported > 0) {
+        if (selectedDestinations.length > 0 && data.importedCopies) {
+          // Fetch media to map image URLs
+          const { data: allMedia } = await supabase.from('media').select('name, url, path').eq('user_id', user.id);
+          const mediaByExactPath = new Map<string, string>();
+          const mediaByName = new Map<string, string>();
+          
+          (allMedia || []).forEach((m: any) => {
+            const lowerName = m.name.toLowerCase();
+            mediaByName.set(lowerName, m.url);
+            if (m.path) mediaByExactPath.set(`${m.path}/${lowerName}`.toLowerCase(), m.url);
+          });
+
+          const postsToInsert: any[] = [];
+          for (const copy of data.importedCopies) {
+             let imageUrl = '';
+             if (copy.media_path) {
+               if (copy.media_path.startsWith('http')) imageUrl = copy.media_path;
+               else {
+                 const parts = copy.media_path.split('/');
+                 const fileName = (parts.pop() || '').toLowerCase();
+                 const hasFolder = parts.length > 0;
+                 if (hasFolder) {
+                   let expectedPath = parts.join('/');
+                   if (!expectedPath.startsWith('root')) expectedPath = `root/${expectedPath}`;
+                   imageUrl = mediaByExactPath.get(`${expectedPath}/${fileName}`.toLowerCase()) || mediaByName.get(fileName) || '';
+                 } else imageUrl = mediaByName.get(fileName) || '';
+               }
+             }
+
+             const scheduledAt = copy.suggested_at || new Date(Date.now() + 60 * 60 * 1000).toISOString();
+             const copyPlatform = copy.platform || 'both';
+
+             selectedDestinations.forEach(dest => {
+               const [type, destId] = dest.split(':');
+               if (type === 'fb' && (copyPlatform === 'facebook' || copyPlatform === 'both')) {
+                  postsToInsert.push({ user_id: user.id, copy_id: copy.id, image_path: imageUrl, scheduled_at: scheduledAt, status: 'pending', platform: 'facebook', facebook_page_id: destId, instagram_account_id: null });
+               } else if (type === 'ig' && (copyPlatform === 'instagram' || copyPlatform === 'both')) {
+                  postsToInsert.push({ user_id: user.id, copy_id: copy.id, image_path: imageUrl, scheduled_at: scheduledAt, status: 'pending', platform: 'instagram', facebook_page_id: null, instagram_account_id: destId });
+               }
+             });
+          }
+
+          if (postsToInsert.length > 0) {
+             await supabase.from('posts').insert(postsToInsert);
+          }
+        }
         onSuccess();
       }
     } catch (error: any) {
@@ -166,6 +230,7 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
     setFile(null);
     setPreview([]);
     setResult(null);
+    setSelectedDestinations([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -237,6 +302,52 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
                       accept={format === 'csv' ? '.csv' : '.txt'} 
                       className="hidden" 
                     />
+                  </div>
+
+                  {/* Target Destinations */}
+                  <div className="space-y-3 p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                      Destinos Automáticos (Opcional)
+                    </label>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Selecciona cuentas para crear los posts en estado "Pendiente" automáticamente tras importar.
+                    </p>
+                    {pages.length > 0 || igAccounts.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-3 mt-2">
+                        {pages.map(p => (
+                          <label key={`fb:${p.id}`} className={`flex items-center gap-3 p-3 bg-white border rounded-xl cursor-pointer hover:border-blue-300 transition-all ${selectedDestinations.includes(`fb:${p.id}`) ? 'border-blue-400 shadow-sm' : 'border-slate-200'}`}>
+                            <input 
+                              type="checkbox" 
+                              checked={selectedDestinations.includes(`fb:${p.id}`)}
+                              onChange={(e) => {
+                                if (e.target.checked) setSelectedDestinations([...selectedDestinations, `fb:${p.id}`]);
+                                else setSelectedDestinations(selectedDestinations.filter(id => id !== `fb:${p.id}`));
+                              }}
+                              className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
+                            />
+                            <span className="material-symbols-outlined text-[18px] text-blue-500">thumb_up</span>
+                            <span className="text-xs font-bold text-slate-700 truncate">{p.page_name}</span>
+                          </label>
+                        ))}
+                        {igAccounts.map(ig => (
+                          <label key={`ig:${ig.id}`} className={`flex items-center gap-3 p-3 bg-white border rounded-xl cursor-pointer hover:border-rose-300 transition-all ${selectedDestinations.includes(`ig:${ig.id}`) ? 'border-rose-400 shadow-sm' : 'border-slate-200'}`}>
+                            <input 
+                              type="checkbox" 
+                              checked={selectedDestinations.includes(`ig:${ig.id}`)}
+                              onChange={(e) => {
+                                if (e.target.checked) setSelectedDestinations([...selectedDestinations, `ig:${ig.id}`]);
+                                else setSelectedDestinations(selectedDestinations.filter(id => id !== `ig:${ig.id}`));
+                              }}
+                              className="w-4 h-4 rounded text-rose-500 focus:ring-rose-500 border-slate-300"
+                            />
+                            <span className="material-symbols-outlined text-[18px] text-rose-500">photo_camera</span>
+                            <span className="text-xs font-bold text-slate-700 truncate">@{ig.username}</span>
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                       <div className="text-xs font-bold text-rose-500">No hay cuentas conectadas disponibles.</div>
+                    )}
                   </div>
 
                   {preview.length > 0 && (

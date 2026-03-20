@@ -21,6 +21,12 @@ interface Post {
   campaign_id?: string | null;
 }
 
+interface Account {
+  id: string;
+  name: string;
+  platform: 'facebook' | 'instagram';
+}
+
 function MediaPreview({ path }: { path: string }) {
   const [url, setUrl] = useState<string>('');
   const isVideo = /\.(mp4|mov|avi|wmv|flv|webm|mkv)$/i.test(path);
@@ -76,26 +82,63 @@ export default function ScheduledPosts() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [activeTab, setActiveTab] = useState<'facebook' | 'instagram'>('facebook');
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [activeAccountId, setActiveAccountId] = useState<string | 'all'>('all');
 
-  const filteredPosts = posts.filter(p => p.platform === activeTab || p.platform === 'both');
-  const facebookPostsCount = posts.filter(p => p.platform === 'facebook' || p.platform === 'both').length;
-  const instagramPostsCount = posts.filter(p => p.platform === 'instagram' || p.platform === 'both').length;
+  const filteredPosts = posts.filter(p => {
+    if (activeAccountId === 'all') return true;
+    const account = accounts.find(a => a.id === activeAccountId);
+    if (!account) return true;
+    
+    if (account.platform === 'facebook') {
+      return p.platform === 'facebook' || (p.platform === 'both' && p.facebook_page_id === activeAccountId);
+    } else {
+      return p.platform === 'instagram' || (p.platform === 'both' && p.instagram_account_id === activeAccountId);
+    }
+  });
+
+  const getPostsCountForAccount = (accountId: string | 'all') => {
+    if (accountId === 'all') return posts.length;
+    const account = accounts.find(a => a.id === accountId);
+    if (!account) return 0;
+    return posts.filter(p => {
+      if (account.platform === 'facebook') {
+        return (p.platform === 'facebook' || p.platform === 'both') && p.facebook_page_id === accountId;
+      } else {
+        return (p.platform === 'instagram' || p.platform === 'both') && p.instagram_account_id === accountId;
+      }
+    }).length;
+  };
 
   const fetchPosts = async () => {
     if (!user) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*, copies(name, content), facebook_pages(page_name), instagram_accounts(username)')
-        .eq('user_id', user.id)
-        .order('scheduled_at', { ascending: true });
+      const [postsRes, pagesRes, igRes] = await Promise.all([
+        supabase
+          .from('posts')
+          .select('*, copies(name, content), facebook_pages(page_name), instagram_accounts(username)')
+          .eq('user_id', user.id)
+          .order('scheduled_at', { ascending: true }),
+        supabase.from('facebook_pages').select('id, page_name').eq('user_id', user.id).eq('is_active', true),
+        supabase.from('instagram_accounts').select('id, username').eq('user_id', user.id).eq('is_active', true)
+      ]);
 
-      if (error) throw error;
-      setPosts(data || []);
+      if (postsRes.error) throw postsRes.error;
+      
+      setPosts(postsRes.data || []);
+
+      const loadedAccounts: Account[] = [];
+      if (pagesRes.data) {
+        loadedAccounts.push(...pagesRes.data.map(p => ({ id: p.id, name: p.page_name, platform: 'facebook' as const })));
+      }
+      if (igRes.data) {
+        loadedAccounts.push(...igRes.data.map(ig => ({ id: ig.id, name: `@${ig.username}`, platform: 'instagram' as const })));
+      }
+      setAccounts(loadedAccounts);
+
     } catch (error: any) {
-      console.error('Error fetching posts:', error.message);
+      console.error('Error fetching posts or accounts:', error.message);
     } finally {
       setLoading(false);
     }
@@ -133,11 +176,11 @@ export default function ScheduledPosts() {
     if (!user) return;
     const pendingPosts = filteredPosts.filter((p: Post) => p.status === 'pending');
     if (pendingPosts.length === 0) {
-      alert(`No hay publicaciones pendientes por aprobar en ${activeTab === 'facebook' ? 'Facebook' : 'Instagram'}.`);
+      alert('No hay publicaciones pendientes por aprobar en esta selección.');
       return;
     }
 
-    if (!confirm(`¿Aprobar ${pendingPosts.length} publicaciones pendientes de ${activeTab === 'facebook' ? 'Facebook' : 'Instagram'}?`)) return;
+    if (!confirm(`¿Aprobar ${pendingPosts.length} publicaciones pendientes?`)) return;
 
     setLoading(true);
     try {
@@ -223,37 +266,47 @@ export default function ScheduledPosts() {
         </div>
       </div>
 
-      {/* Tabs */}
-      {!loading && (
-        <div className="flex items-center gap-4 bg-slate-100 p-1.5 rounded-2xl w-fit">
+      {/* Accounts Filter */}
+      {!loading && accounts.length > 0 && (
+        <div className="flex flex-wrap items-center gap-4 bg-slate-50 p-2 rounded-[2rem] border border-slate-100 w-fit">
           <button
-            onClick={() => setActiveTab('facebook')}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all ${
-              activeTab === 'facebook' 
-                ? 'bg-white text-blue-600 shadow-sm' 
-                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+            onClick={() => setActiveAccountId('all')}
+            className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm transition-all ${
+              activeAccountId === 'all' 
+                ? 'bg-white text-slate-800 shadow-sm border border-slate-200' 
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50 border border-transparent'
             }`}
           >
-            <span className="material-symbols-outlined text-[18px]">thumb_up</span>
-            Facebook
-            <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-black ${activeTab === 'facebook' ? 'bg-blue-50 text-blue-600' : 'bg-slate-200 text-slate-500'}`}>
-              {facebookPostsCount}
+            <span className="material-symbols-outlined text-[18px]">grid_view</span>
+            Todas las Cuentas
+            <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-black ${activeAccountId === 'all' ? 'bg-slate-100 text-slate-600' : 'bg-slate-200/50 text-slate-400'}`}>
+              {getPostsCountForAccount('all')}
             </span>
           </button>
-          <button
-            onClick={() => setActiveTab('instagram')}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all ${
-              activeTab === 'instagram' 
-                ? 'bg-white text-rose-500 shadow-sm' 
-                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">photo_camera</span>
-            Instagram
-            <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-black ${activeTab === 'instagram' ? 'bg-rose-50 text-rose-500' : 'bg-slate-200 text-slate-500'}`}>
-              {instagramPostsCount}
-            </span>
-          </button>
+
+          {accounts.map(acc => (
+            <button
+              key={acc.id}
+              onClick={() => setActiveAccountId(acc.id)}
+              className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm transition-all ${
+                activeAccountId === acc.id
+                  ? acc.platform === 'facebook' ? 'bg-white text-blue-600 shadow-sm border border-blue-100' : 'bg-white text-rose-500 shadow-sm border border-rose-100'
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50 border border-transparent'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                {acc.platform === 'facebook' ? 'thumb_up' : 'photo_camera'}
+              </span>
+              {acc.name}
+              <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-black ${
+                activeAccountId === acc.id
+                  ? acc.platform === 'facebook' ? 'bg-blue-50 text-blue-600' : 'bg-rose-50 text-rose-500'
+                  : 'bg-slate-200/50 text-slate-400'
+              }`}>
+                {getPostsCountForAccount(acc.id)}
+              </span>
+            </button>
+          ))}
         </div>
       )}
 
@@ -284,7 +337,7 @@ export default function ScheduledPosts() {
           <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
             <span className="material-symbols-outlined text-4xl text-slate-300">post_add</span>
           </div>
-          <p className="text-slate-500 font-black text-xl mb-4">No hay publicaciones de {activeTab === 'facebook' ? 'Facebook' : 'Instagram'} programadas aún.</p>
+          <p className="text-slate-500 font-black text-xl mb-4">No hay publicaciones programadas para esta cuenta aún.</p>
           <button 
             onClick={() => setIsModalOpen(true)}
             className="text-indigo-600 font-black text-sm uppercase tracking-widest hover:underline"

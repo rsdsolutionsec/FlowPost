@@ -56,6 +56,8 @@ export default async function handler(
       };
     }).filter(Boolean);
 
+    let importedCopies: any[] = [];
+
     if (toInsert.length > 0) {
       const { data, error } = await supabaseAdmin
         .from('copies')
@@ -66,11 +68,13 @@ export default async function handler(
         throw error;
       }
       importedCount = data?.length || 0;
+      importedCopies = data || [];
     }
 
     return res.status(200).json({
       success: true,
       imported: importedCount,
+      importedCopies,
       failed: failedCount,
       errors
     });

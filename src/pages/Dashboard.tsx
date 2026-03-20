@@ -119,7 +119,7 @@ export default function Dashboard() {
                  </div>
                  <div className="flex-1 min-w-0">
                     <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">{post.platform}</p>
-                    <p className="font-bold text-slate-800 text-sm truncate">{post.caption.substring(0, 30)}...</p>
+                    <p className="font-bold text-slate-800 text-sm truncate">{(post.caption || '').substring(0, 30)}...</p>
                     <p className="text-[10px] text-slate-400 mt-1 font-medium italic">
                       {new Date(post.scheduled_at).toLocaleDateString()}
                     </p>

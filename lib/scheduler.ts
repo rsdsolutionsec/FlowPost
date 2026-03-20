@@ -9,7 +9,20 @@ export async function processScheduledPosts() {
   const { data: posts, error } = await supabaseAdmin
     .from('posts')
     .select(`
-      id
+      *,
+      copies (
+        content
+      ),
+      facebook_pages (
+        page_id,
+        page_access_token
+      ),
+      instagram_accounts (
+        instagram_business_id,
+        facebook_pages (
+          page_access_token
+        )
+      )
     `)
     .eq('status', 'scheduled')
     .lte('scheduled_at', now);
@@ -183,7 +196,7 @@ export async function processScheduledPosts() {
           .eq('id', post.id);
         
         failed++;
-        console.error(`[Scheduler] Post ${post.id} falló en ${post.platform}: ${result.error}`);
+        console.error(`[Scheduler] Post ${post.id} falló en Facebook: ${result.error}`);
       }
     } catch (e: any) {
       failed++;
@@ -203,7 +216,7 @@ export async function processScheduledPosts() {
 
   return {
     success: true,
-    processed: lockedPosts.length,
+    processed: posts.length,
     succeeded,
     failed
   };

@@ -1,803 +1,487 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-
-interface PrefillData {
-  copyId?: string;
-  copyName?: string;
-  scheduledAt?: string;
-  mediaUrl?: string; // If it's a direct URL (like from R2 or copy library)
-  mediaPath?: string; // If it's a storage path
-  mediaFileName?: string;
-  editId?: string;         // If present, we are editing this post
-  status?: string;         // original status
-  platform?: string;       // original platform
-  facebookPageId?: string;
-  instagramAccountId?: string;
-  campaignId?: string;
-  caption?: string;
-}
 
 interface CreatePostModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  prefill?: PrefillData;
+  prefill?: {
+    editId?: string;
+    caption?: string;
+    mediaUrl?: string;
+    mediaPath?: string;
+    mediaFileName?: string;
+    platform?: string;
+    status?: string;
+    facebookPageId?: string;
+    instagramAccountId?: string;
+    campaignId?: string;
+    copyId?: string;
+    copyName?: string;
+    scheduledAt?: string;
+  };
 }
 
-interface UserSettings {
-  whatsapp_enabled: boolean;
-  whatsapp_number: string;
-  email_enabled: boolean;
-  email_address: string;
-  website_enabled: boolean;
-  website_url: string;
+interface FacebookPage {
+  id: string;
+  page_name: string;
+  access_token: string;
 }
 
-// Helper to sanitize paths (Supabase Storage is picky with special chars like ñ or spaces)
-const sanitizePath = (name: string) => {
-  return name
-    .normalize('NFD') // Separate accents from characters
-    .replace(/[\u0300-\u036f]/g, '') // Remove accents (ñ -> n)
-    .replace(/[^a-zA-Z0-9.-]/g, '_') // Replace spaces and special chars with underscore
-    .replace(/_{2,}/g, '_'); // Collapse multiple underscores
-};
-
-interface ImagePreviewProps {
-  path: string;
-  fileName: string;
-  selected: boolean;
-  onClick: () => void;
-  isFolder?: boolean;
+interface InstagramAccount {
+  id: string;
+  username: string;
 }
 
-const ImagePreview: React.FC<ImagePreviewProps> = ({ path, fileName, selected, onClick, isFolder }) => {
-  const [url, setUrl] = useState<string>('');
-  const [loading, setLoading] = useState(!isFolder);
+interface Campaign {
+  id: string;
+  name: string;
+}
 
-  useEffect(() => {
-    if (isFolder) return;
-    if (path.startsWith('http')) {
-      setUrl(path);
-      return;
-    }
-    
-    let objectUrl: string;
-    const loadImg = async () => {
-      try {
-        const { data, error } = await supabase.storage.from('posts').download(path);
-        if (error) throw error;
-        if (data) {
-          objectUrl = URL.createObjectURL(data);
-          setUrl(objectUrl);
-        }
-      } catch (err) {
-        console.error('Error cargando preview:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadImg();
-    return () => {
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [path, isFolder]);
+interface FileItem {
+  id: string;
+  name: string;
+  url: string;
+  mimetype: string;
+}
 
-  if (isFolder) {
-    return (
-      <div 
-        onClick={onClick}
-        className="relative flex-none w-24 h-24 snap-start cursor-pointer rounded-xl overflow-hidden group bg-slate-50 border border-slate-200 flex flex-col items-center justify-center hover:bg-slate-100 hover:border-slate-300 transition-all shadow-sm"
-      >
-        <span className="material-symbols-outlined text-3xl text-blue-400 group-hover:scale-110 transition-transform">folder</span>
-        <span className="text-[10px] font-bold text-slate-600 truncate w-full px-2 text-center mt-1">{fileName}</span>
-      </div>
-    );
-  }
-
+const ImagePreview = ({ path, fileName, selected, onClick }: { path: string; fileName: string; selected: boolean; onClick: () => void }) => {
+  const isVideo = fileName.toLowerCase().match(/\.(mp4|webm|ogg)$/);
   return (
     <div 
       onClick={onClick}
-      className="relative flex-none w-24 h-24 snap-start cursor-pointer rounded-xl overflow-hidden group"
+      className={`relative aspect-square rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${
+        selected ? 'border-primary ring-2 ring-primary/20' : 'border-transparent hover:border-slate-200'
+      }`}
     >
-      {loading ? (
-        <div className="w-full h-full bg-slate-100 flex items-center justify-center animate-pulse rounded-xl border-2 border-transparent">
-           <span className="material-symbols-outlined text-slate-300">image</span>
+      {isVideo ? (
+        <div className="w-full h-full bg-slate-100 flex items-center justify-center">
+          <span className="material-symbols-outlined text-slate-400">movie</span>
         </div>
-      ) : url ? (
-        <img 
-          src={url} 
-          alt={fileName}
-          className={`w-full h-full object-cover border-[3px] rounded-xl transition-all duration-200 ${
-            selected 
-            ? 'border-primary shadow-md scale-95' 
-            : 'border-transparent group-hover:border-primary/30 focus:border-primary/30'
-          }`}
-        />
       ) : (
-        <div className="w-full h-full bg-slate-100 flex items-center justify-center rounded-xl border-2 border-transparent">
-          <span className="material-symbols-outlined text-rose-300">broken_image</span>
-        </div>
+        <img src={path} alt={fileName} className="w-full h-full object-cover" />
       )}
-      
       {selected && (
-        <div className="absolute top-1 right-1 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center shadow-sm">
-          <span className="material-symbols-outlined text-[12px] font-bold">check</span>
+        <div className="absolute inset-0 bg-primary/10 flex items-center justify-center">
+          <div className="bg-primary text-white rounded-full p-1 shadow-lg">
+            <span className="material-symbols-outlined text-base">check</span>
+          </div>
         </div>
       )}
     </div>
   );
-}
+};
 
-interface Page { id: string; page_name: string; }
-interface InstagramAccount { id: string; username: string; }
-interface Campaign { id: string; name: string; }
-interface LibraryCopy { id: string; name: string; }
-interface MediaItem { id: string; name: string; url: string; mimetype: string; path: string; size: number; }
 export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }: CreatePostModalProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Media State
-  const [imageSource, setImageSource] = useState<'upload' | 'library'>('upload');
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string>('');
-  const [libraryItems, setLibraryItems] = useState<MediaItem[]>([]);
-  const [selectedLibraryFile, setSelectedLibraryFile] = useState<string>(''); // Full url selected
-  const [selectedLibraryFileName, setSelectedLibraryFileName] = useState<string>('');
-  const [mediaCurrentFolder, setMediaCurrentFolder] = useState<string>('');
-
-  const [pages, setPages] = useState<Page[]>([]);
+  const [facebookPages, setFacebookPages] = useState<FacebookPage[]>([]);
   const [instagramAccounts, setInstagramAccounts] = useState<InstagramAccount[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [copies, setCopies] = useState<LibraryCopy[]>([]);
-  const [selectedPageId, setSelectedPageId] = useState<string>('');
-  const [selectedInstagramId, setSelectedInstagramId] = useState<string>('');
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
-  const [selectedCopyId, setSelectedCopyId] = useState<string>('');
-  const [useReusableCopy, setUseReusableCopy] = useState(false);
-  const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
-  const [includeSignature, setIncludeSignature] = useState(true);
-  const [publishToFacebook, setPublishToFacebook] = useState(true);
-  const [publishToInstagram, setPublishToInstagram] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string | null>(null);
+  
+  // Library selection
+  const [imageSource, setImageSource] = useState<'upload' | 'library'>('upload');
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [selectedLibraryFile, setSelectedLibraryFile] = useState<string>('');
+  const [selectedLibraryFileName, setSelectedLibraryFileName] = useState<string>('');
+  const [loadingLibrary, setLoadingLibrary] = useState(false);
+
   const [formData, setFormData] = useState({
     caption: '',
+    platform: 'facebook',
+    facebook_page_id: '',
+    instagram_account_id: '',
+    campaign_id: '',
     scheduled_at: '',
   });
 
-  // Fetch initial base data (Pages, Campaigns, Copies, Root Library)
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (isOpen && user) {
-      const fetchData = async () => {
-        const [pagesRes, igRes, campaignsRes, copiesRes, settingsRes] = await Promise.all([
-          supabase.from('facebook_pages').select('id, page_name').eq('is_active', true).eq('user_id', user.id),
-          supabase.from('instagram_accounts').select('id, username').eq('is_active', true).eq('user_id', user.id),
-          supabase.from('campaigns').select('id, name').eq('user_id', user.id),
-          supabase.from('copies').select('id, name').eq('user_id', user.id),
-          supabase.from('user_settings').select('*').eq('user_id', user.id).single()
-        ]);
+      if (prefill) {
+        setFormData({
+          caption: prefill.caption || '',
+          platform: prefill.platform || 'facebook',
+          facebook_page_id: prefill.facebookPageId || '',
+          instagram_account_id: prefill.instagramAccountId || '',
+          campaign_id: prefill.campaignId || '',
+          scheduled_at: prefill.scheduledAt ? new Date(prefill.scheduledAt).toISOString().slice(0, 16) : '',
+        });
         
-        if (pagesRes.data) {
-          setPages(pagesRes.data as Page[]);
-          if (pagesRes.data.length > 0) setSelectedPageId(pagesRes.data[0].id);
-        }
-        if (igRes.data) {
-          setInstagramAccounts(igRes.data as InstagramAccount[]);
-          if (igRes.data.length > 0) setSelectedInstagramId(igRes.data[0].id);
-        }
-        if (campaignsRes.data) {
-          setCampaigns(campaignsRes.data as Campaign[]);
-        }
-        if (copiesRes.data) {
-          setCopies(copiesRes.data as LibraryCopy[]);
-        }
-        if (settingsRes.data) {
-          setUserSettings(settingsRes.data as UserSettings);
-          // If no signature info is enabled, don't show the toggle or at least default it based on settings
-          const hasAnyEnabled = settingsRes.data.whatsapp_enabled || settingsRes.data.email_enabled || settingsRes.data.website_enabled;
-          setIncludeSignature(hasAnyEnabled);
-        }
-
-        // Apply prefill data after loading
-        if (prefill) {
-          if (prefill.copyId) {
-            setUseReusableCopy(true);
-            setSelectedCopyId(prefill.copyId);
-          }
-          if (prefill.scheduledAt) {
-            const d = new Date(prefill.scheduledAt);
-            const offset = d.getTimezoneOffset() * 60000;
-            const local = new Date(d.getTime() - offset).toISOString().slice(0, 16);
-            setFormData(prev => ({ ...prev, scheduled_at: local }));
-          }
-
-          if (prefill.platform) {
-            const pl = prefill.platform || 'facebook';
-            setPublishToFacebook(pl === 'facebook' || pl === 'both');
-            setPublishToInstagram(pl === 'instagram' || pl === 'both');
-          }
-
-          if (prefill.caption) {
-            setFormData(prev => ({ ...prev, caption: prefill.caption || '' }));
-          }
-
-          if (prefill.facebookPageId) setSelectedPageId(prefill.facebookPageId);
-          if (prefill.instagramAccountId) setSelectedInstagramId(prefill.instagramAccountId);
-          if (prefill.campaignId) setSelectedCampaignId(prefill.campaignId);
-
-          // Auto-select media: if direct URL provided, use it immediately
-          if (prefill.mediaUrl) {
+        if (prefill.mediaUrl) {
+          if (prefill.mediaUrl.startsWith('http')) {
             setImageSource('library');
             setSelectedLibraryFile(prefill.mediaUrl);
-            setSelectedLibraryFileName(prefill.mediaFileName || prefill.mediaUrl.split('/').pop() || 'media');
-          }
-          // Auto-resolve from library by filename and path if provided
-          if (prefill.mediaPath && !prefill.mediaUrl) {
-            const parts = prefill.mediaPath.split('/');
-            const fileName = parts.pop();
-            const hasFolder = parts.length > 0;
-            
-            if (fileName && user) {
-              let foundMatch = null;
-              
-              if (hasFolder) {
-                let expectedDbPath = parts.join('/');
-                if (!expectedDbPath.startsWith('root')) {
-                  expectedDbPath = `root/${expectedDbPath}`;
-                }
-                const { data: exactMatch } = await supabase
-                  .from('media')
-                  .select('url, name')
-                  .eq('user_id', user.id)
-                  .ilike('name', fileName)
-                  .ilike('path', expectedDbPath)
-                  .limit(1)
-                  .single();
-                  
-                if (exactMatch?.url) foundMatch = exactMatch;
-              }
-
-              if (!foundMatch) {
-                const { data: fallbackMatch } = await supabase
-                  .from('media')
-                  .select('url, name')
-                  .eq('user_id', user.id)
-                  .ilike('name', fileName)
-                  .limit(1)
-                  .single();
-                if (fallbackMatch?.url) foundMatch = fallbackMatch;
-              }
-              
-              if (foundMatch?.url) {
-                setImageSource('library');
-                setSelectedLibraryFile(foundMatch.url);
-                setSelectedLibraryFileName(foundMatch.name);
-              }
-            }
+            setSelectedLibraryFileName(prefill.mediaFileName || 'Archivo seleccionado');
           }
         }
-      };
+      } else {
+        setFormData({
+            caption: '',
+            platform: 'facebook',
+            facebook_page_id: '',
+            instagram_account_id: '',
+            campaign_id: '',
+            scheduled_at: '',
+        });
+        setImageFile(null);
+        setUploadPreviewUrl(null);
+        setSelectedLibraryFile('');
+        setSelectedLibraryFileName('');
+        setImageSource('upload');
+      }
       fetchData();
     }
-  }, [isOpen, user]);
+  }, [isOpen, user, prefill]);
 
-  // Fetch library items automatically whenever the current folder changes
-  useEffect(() => {
-    if (isOpen && user && imageSource === 'library') {
-      const fetchLibraryMedia = async () => {
-        const folderIdentifier = mediaCurrentFolder ? `root/${mediaCurrentFolder}` : 'root';
-        const { data, error } = await supabase.from('media')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('path', folderIdentifier)
-          .order('mimetype', { ascending: false }) // Folders first (alphabetically 'folder' > 'image/...') - wait, 'f' < 'i'. Let's just sort.
-          .order('created_at', { ascending: false });
-        
-        if (!error && data) {
-          setLibraryItems(data as MediaItem[]);
+  const fetchData = async () => {
+    if (!user) return;
+    try {
+      const [pagesRes, igRes, campaignsRes] = await Promise.all([
+        supabase.from('facebook_pages').select('*').eq('user_id', user.id).eq('is_active', true),
+        supabase.from('instagram_accounts').select('*').eq('user_id', user.id).eq('is_active', true),
+        supabase.from('campaigns').select('id, name').eq('user_id', user.id)
+      ]);
+
+      if (pagesRes.data) {
+        setFacebookPages(pagesRes.data);
+        if (pagesRes.data.length > 0 && !prefill?.facebookPageId) {
+          setFormData(prev => ({ ...prev, facebook_page_id: pagesRes.data[0].id }));
         }
-      };
-      fetchLibraryMedia();
-    }
-  }, [isOpen, user, mediaCurrentFolder, imageSource]);
-
-  // Handle local upload preview URL
-  useEffect(() => {
-    if (imageFile) {
-      const url = URL.createObjectURL(imageFile);
-      setUploadPreviewUrl(url);
-      return () => URL.revokeObjectURL(url);
-    } else {
-      setUploadPreviewUrl('');
-    }
-  }, [imageFile]);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setImageFile(e.target.files[0]);
+      }
+      if (igRes.data) {
+        setInstagramAccounts(igRes.data);
+        if (igRes.data.length > 0 && !prefill?.instagramAccountId) {
+            setFormData(prev => ({ ...prev, instagram_account_id: igRes.data[0].id }));
+        }
+      }
+      if (campaignsRes.data) setCampaigns(campaignsRes.data);
+    } catch (error) {
+      console.error('Error fetching modal data:', error);
     }
   };
 
-  const handleItemClick = (item: MediaItem) => {
-    if (item.mimetype === 'folder') {
-       // Is a folder
-       setMediaCurrentFolder(mediaCurrentFolder ? `${mediaCurrentFolder}/${item.name}` : item.name);
-    } else {
-       // Is a file - Use the public URL directly
-       setSelectedLibraryFile(item.url);
-       setSelectedLibraryFileName(item.name);
+  const fetchLibrary = async () => {
+    if (!user) return;
+    setLoadingLibrary(true);
+    try {
+      const { data, error } = await supabase
+        .from('media')
+        .select('*')
+        .eq('user_id', user.id)
+        .neq('mimetype', 'folder')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setFiles(data || []);
+    } catch (error) {
+      console.error('Error loading library:', error);
+    } finally {
+      setLoadingLibrary(false);
+    }
+  };
+
+  const handleItemClick = (file: FileItem) => {
+    setSelectedLibraryFile(file.url);
+    setSelectedLibraryFileName(file.name);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImageFile(file);
+      const url = URL.createObjectURL(file);
+      setUploadPreviewUrl(url);
     }
   };
 
   const handleRemoveMedia = () => {
     setImageFile(null);
+    setUploadPreviewUrl(null);
     setSelectedLibraryFile('');
     setSelectedLibraryFileName('');
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handleGoBackFolder = () => {
-    if (!mediaCurrentFolder) return;
-    const parts = mediaCurrentFolder.split('/');
-    parts.pop();
-    setMediaCurrentFolder(parts.join('/'));
-  };
-
-  const getContactSignature = () => {
-    if (!userSettings) return '';
-    const enabled = [];
-    if (userSettings.whatsapp_enabled && userSettings.whatsapp_number) enabled.push('whatsapp');
-    if (userSettings.email_enabled && userSettings.email_address) enabled.push('email');
-    if (userSettings.website_enabled && userSettings.website_url) enabled.push('website');
-
-    if (enabled.length === 0) return '';
-
-    if (enabled.length === 1) {
-      if (enabled[0] === 'whatsapp') {
-        const cleanNumber = userSettings.whatsapp_number.replace(/\D/g, '');
-        return `📲 Escríbenos por WhatsApp:\nhttps://wa.me/${cleanNumber}`;
-      }
-      if (enabled[0] === 'email') {
-        return `📧 Correo:\n${userSettings.email_address}`;
-      }
-      if (enabled[0] === 'website') {
-        return `🌐 Página web:\n${userSettings.website_url}`;
-      }
-    }
-
-    // Multiple
-    const lines = [];
-    if (userSettings.whatsapp_enabled && userSettings.whatsapp_number) {
-      const cleanNumber = userSettings.whatsapp_number.replace(/\D/g, '');
-      lines.push(`📲 WhatsApp:\nhttps://wa.me/${cleanNumber}`);
-    }
-    if (userSettings.email_enabled && userSettings.email_address) {
-      lines.push(`📧 Correo:\n${userSettings.email_address}`);
-    }
-    if (userSettings.website_enabled && userSettings.website_url) {
-      lines.push(`🌐 Página web:\n${userSettings.website_url}`);
-    }
-    return lines.join('\n\n');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
     
-    if (!publishToFacebook && !publishToInstagram) {
-      alert('Por favor selecciona al menos una red social (Facebook o Instagram)');
-      return;
-    }
-    if (publishToFacebook && !selectedPageId) {
-      alert('Por favor selecciona una Página de Facebook');
-      return;
-    }
-    if (publishToInstagram && !selectedInstagramId) {
-      alert('Por favor selecciona una Cuenta de Instagram');
-      return;
-    }
-    const isValidMedia = (imageSource === 'upload' && imageFile) || (imageSource === 'library' && selectedLibraryFile);
-    if (!user || !isValidMedia) {
-      alert('Por favor selecciona una imagen o video');
-      return;
-    }
-
-    if (useReusableCopy && !selectedCopyId) {
-      alert('Por favor selecciona un copy de tu librería');
-      return;
-    }
-
     setLoading(true);
     try {
-      let filePath = '';
+      let imageUrl = selectedLibraryFile;
 
-      if (imageSource === 'upload' && imageFile) {
-        // 1. Subir a R2 vía backend presigned
+      // Upload if new file provided
+      if (imageFile) {
         const fileExt = imageFile.name.split('.').pop();
-        const safeBaseName = sanitizePath(imageFile.name.replace(/\.[^/.]+$/, ""));
-        const fileName = `${Math.random().toString(36).substring(2)}_${safeBaseName}.${fileExt}`;
-        const presignPath = `${user.id}/${fileName}`;
+        const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
+        const filePath = `${user.id}/${fileName}`;
 
         const presignRes = await fetch('/api/media/presign', {
-           method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ filename: presignPath, contentType: imageFile.type })
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: filePath, contentType: imageFile.type })
         });
-        if (!presignRes.ok) throw new Error('Failed to generate presigned URL');
+        
+        if (!presignRes.ok) throw new Error('Falló la generación de URL de subida');
         const { url, publicUrl } = await presignRes.json();
-        
+
         const uploadRes = await fetch(url, {
-           method: 'PUT',
-           headers: { 'Content-Type': imageFile.type },
-           body: imageFile
+          method: 'PUT',
+          headers: { 'Content-Type': imageFile.type },
+          body: imageFile
         });
-        if (!uploadRes.ok) throw new Error('Upload to R2 failed');
+
+        if (!uploadRes.ok) throw new Error('La subida al servidor falló');
         
-        // Guardamos también en tabla media
+        imageUrl = publicUrl;
+        
+        // Save to media library automatically if uploaded from here
         await supabase.from('media').insert({
-          user_id: user.id,
-          name: fileName,
-          path: 'root', // Por defecto a root cuando se programa directo
-          mimetype: imageFile.type,
-          size: imageFile.size,
-          url: publicUrl
+           user_id: user.id,
+           name: imageFile.name,
+           path: 'root',
+           mimetype: imageFile.type,
+           size: imageFile.size,
+           url: publicUrl
         });
-        
-        filePath = publicUrl;
-      } else {
-        // Usar archivo existente de la biblioteca
-        filePath = selectedLibraryFile;
       }
 
-      // 2. Insert or Update in the tabla posts
-      // Append signature to caption if requested
-      let finalCaption = formData.caption;
-      if (includeSignature && !useReusableCopy) {
-        const signature = getContactSignature();
-        if (signature && !finalCaption.includes(signature)) {
-          finalCaption = finalCaption.trim() + '\n\n' + signature;
-        }
+      if (!imageUrl && !prefill?.editId) {
+        throw new Error('Debes seleccionar o subir una imagen/video');
       }
 
-      const basePostData = {
+      const postData = {
         user_id: user.id,
-        campaign_id: selectedCampaignId || null,
-        copy_id: useReusableCopy ? selectedCopyId : null,
-        custom_caption: useReusableCopy ? null : finalCaption,
-        caption: useReusableCopy ? null : finalCaption,
-        image_path: filePath,
+        caption: formData.caption,
+        custom_caption: formData.caption,
+        image_path: imageUrl,
+        platform: formData.platform,
+        facebook_page_id: formData.platform === 'facebook' || formData.platform === 'both' ? formData.facebook_page_id : null,
+        instagram_account_id: formData.platform === 'instagram' || formData.platform === 'both' ? formData.instagram_account_id : null,
+        campaign_id: formData.campaign_id || null,
+        copy_id: prefill?.copyId || null,
         scheduled_at: new Date(formData.scheduled_at).toISOString(),
-        status: prefill?.editId ? (prefill.status || 'scheduled') : (prefill ? 'pending' : 'scheduled'),
+        status: prefill?.status === 'pending' ? 'pending' : (prefill?.editId ? prefill.status : 'scheduled')
       };
 
       if (prefill?.editId) {
-        // On edit, update only the first existing post (single platform, keep existing)
-        const editPlatform = publishToFacebook ? 'facebook' : 'instagram';
         const { error } = await supabase
           .from('posts')
-          .update({
-            ...basePostData,
-            facebook_page_id: publishToFacebook ? selectedPageId : null,
-            instagram_account_id: publishToInstagram ? selectedInstagramId : null,
-            platform: editPlatform,
-          })
+          .update(postData)
           .eq('id', prefill.editId);
         if (error) throw error;
       } else {
-        // Build list of posts to insert (one per selected platform)
-        const postsToInsert = [];
-        if (publishToFacebook) {
-          postsToInsert.push({
-            ...basePostData,
-            facebook_page_id: selectedPageId,
-            instagram_account_id: null,
-            platform: 'facebook',
-          });
-        }
-        if (publishToInstagram) {
-          postsToInsert.push({
-            ...basePostData,
-            facebook_page_id: null,
-            instagram_account_id: selectedInstagramId,
-            platform: 'instagram',
-          });
-        }
-        const { error } = await supabase.from('posts').insert(postsToInsert);
+        const { error } = await supabase
+          .from('posts')
+          .insert([postData]);
         if (error) throw error;
       }
-      
+
       onSuccess();
       onClose();
-      
-      // Reset state
-      setFormData({ caption: '', scheduled_at: '' });
-      setPublishToFacebook(true);
-      setPublishToInstagram(false);
-      setImageFile(null);
-      setSelectedCopyId('');
-      setUseReusableCopy(false);
-      setImageSource('upload');
-      setSelectedLibraryFile('');
-      setSelectedLibraryFileName('');
-      setMediaCurrentFolder('');
-      
     } catch (error: any) {
-      console.error('Post Creation Error Context:', error);
-      alert('Error al crear el post (verifica CORS en Cloudflare): ' + error.message);
+      alert('Error: ' + error.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Separar folders de files nativamente para el UI
-  const folders = libraryItems.filter(f => f.mimetype === 'folder');
-  const files = libraryItems.filter(f => f.mimetype !== 'folder');
+  if (!isOpen) return null;
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
           />
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-lg bg-surface-container-lowest rounded-[2.5rem] shadow-2xl overflow-hidden ghost-border flex flex-col max-h-[90vh]"
+            initial={{ scale: 0.95, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.95, opacity: 0, y: 20 }}
+            className="relative w-full max-w-4xl bg-white rounded-[2rem] sm:rounded-[3rem] shadow-2xl flex flex-col md:flex-row h-full max-h-[90vh] md:h-auto md:max-h-[85vh] overflow-hidden m-auto"
           >
-            <div className="p-8 space-y-6 overflow-y-auto">
-              <div className="flex justify-between items-center">
-                <h3 className="text-2xl font-extrabold text-on-surface font-headline">
-                  {prefill?.editId ? 'Editar Publicación' : prefill ? 'Programar desde Copy' : 'Crear Nueva Publicación'}
-                </h3>
-                <button onClick={onClose} className="p-2 hover:bg-surface-container-low rounded-full transition-colors">
-                  <span className="material-symbols-outlined">close</span>
+            {/* Header / Top mobile actions */}
+            <div className="md:hidden p-4 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+               <h3 className="font-black text-slate-800 uppercase tracking-widest text-xs">
+                 {prefill?.editId ? 'Editar Publicación' : 'Nueva Publicación'}
+               </h3>
+               <button onClick={onClose} className="p-2 bg-slate-100 rounded-full">
+                  <span className="material-symbols-outlined text-slate-400">close</span>
+               </button>
+            </div>
+
+            <div className="flex-1 p-6 sm:p-8 md:p-10 lg:p-12 overflow-y-auto custom-scrollbar">
+              <div className="hidden md:flex justify-between items-start mb-8 lg:mb-10">
+                <div className="space-y-1">
+                  <h3 className="text-2xl sm:text-3xl font-black text-slate-900 font-headline leading-tight">
+                    {prefill?.editId ? 'Editar Publicación' : 'Crear Post'}
+                  </h3>
+                  <p className="text-slate-500 font-medium text-sm">
+                    {prefill?.copyName ? `Usando copy: ${prefill.copyName}` : 'Configura tu contenido y programación.'}
+                  </p>
+                </div>
+                <button 
+                  onClick={onClose}
+                  className="p-3 bg-slate-50 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-2xl transition-all"
+                >
+                  <span className="material-symbols-outlined text-3xl">close</span>
                 </button>
               </div>
 
-              {/* Prefill banner */}
-              {prefill && (
-                <div className="flex items-start gap-3 p-4 bg-indigo-50 border border-indigo-100 rounded-2xl">
-                  <span className="material-symbols-outlined text-indigo-500 text-[20px] mt-0.5">auto_awesome</span>
-                  <div>
-                    <p className="text-xs font-black text-indigo-700 uppercase tracking-widest">Pre-configurado desde Copy</p>
-                    <p className="text-xs text-indigo-500 font-medium mt-0.5">
-                      <strong>{prefill.copyName}</strong> · Revisa y completa los datos antes de guardar como pendiente.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <form id="create-post-form" onSubmit={handleSubmit} className="space-y-4">
-                {/* Platform + Destination + Campaign */}
-                <div className="space-y-3 p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Redes Sociales</label>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setPublishToFacebook(!publishToFacebook)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
-                          publishToFacebook
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                            : 'bg-white text-slate-400 border-slate-200 hover:border-blue-300'
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-sm">thumb_up</span>
-                        Facebook
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPublishToInstagram(!publishToInstagram)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
-                          publishToInstagram
-                            ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white border-pink-500 shadow-sm'
-                            : 'bg-white text-slate-400 border-slate-200 hover:border-pink-300'
-                        }`}
-                      >
-                        <span className="material-symbols-outlined text-sm">photo_camera</span>
-                        Instagram
-                      </button>
+              <form id="create-post-form" onSubmit={handleSubmit} className="space-y-6 sm:space-y-8">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Plataforma</label>
+                    <div className="grid grid-cols-3 gap-2 p-1 bg-surface-container-low rounded-2xl">
+                        {['facebook', 'instagram', 'both'].map((p) => (
+                           <button
+                            key={p}
+                            type="button"
+                            onClick={() => setFormData({ ...formData, platform: p })}
+                            className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                              formData.platform === p ? 'bg-white shadow-sm text-primary' : 'text-slate-400 hover:text-slate-600'
+                            }`}
+                           >
+                            {p === 'both' ? 'Ambas' : p}
+                           </button>
+                        ))}
                     </div>
                   </div>
 
-                  {/* Facebook page selector */}
-                  {publishToFacebook && (
-                    <div className="space-y-1">
-                      <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest">Página de Facebook</span>
-                      {pages.length > 0 ? (
-                        <select
-                          value={selectedPageId}
-                          onChange={(e) => setSelectedPageId(e.target.value)}
-                          className="w-full p-3 bg-white rounded-xl border border-blue-100 focus:ring-2 focus:ring-blue-200 text-on-surface text-sm font-bold"
-                        >
-                          {pages.map(page => (
-                            <option key={page.id} value={page.id}>{page.page_name}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <div className="p-3 bg-rose-50 text-rose-600 rounded-xl text-[10px] font-bold border border-rose-100">
-                          No hay páginas de Facebook conectadas
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Instagram account selector */}
-                  {publishToInstagram && (
-                    <div className="space-y-1">
-                      <span className="text-[9px] font-black text-pink-500 uppercase tracking-widest">Cuenta de Instagram</span>
-                      {instagramAccounts.length > 0 ? (
-                        <select
-                          value={selectedInstagramId}
-                          onChange={(e) => setSelectedInstagramId(e.target.value)}
-                          className="w-full p-3 bg-white rounded-xl border border-pink-100 focus:ring-2 focus:ring-pink-200 text-on-surface text-sm font-bold"
-                        >
-                          {instagramAccounts.map(ig => (
-                            <option key={ig.id} value={ig.id}>@{ig.username}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <div className="p-3 bg-rose-50 text-rose-600 rounded-xl text-[10px] font-bold border border-rose-100">
-                          No hay cuentas de Instagram conectadas
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Campaign */}
-                  <div className="space-y-1">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Campaña (Opcional)</span>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Campaña / Proyecto</label>
                     <select
-                      value={selectedCampaignId}
-                      onChange={(e) => setSelectedCampaignId(e.target.value)}
-                      className="w-full p-3 bg-white rounded-xl border border-slate-100 focus:ring-2 focus:ring-primary/20 text-on-surface text-sm font-bold"
+                      value={formData.campaign_id}
+                      onChange={(e) => setFormData({ ...formData, campaign_id: e.target.value })}
+                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-xs font-bold"
                     >
-                      <option value="">Sin Campaña</option>
-                      {campaigns.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
+                      <option value="">Selecciona (Opcional)</option>
+                      {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
                 </div>
 
-                {/* Caption Section */}
-                <div className="space-y-3 p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Contenido del Post</label>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[9px] font-black uppercase tracking-widest ${!useReusableCopy ? 'text-primary' : 'text-slate-300'}`}>Manual</span>
-                      <button 
-                        type="button"
-                        onClick={() => setUseReusableCopy(!useReusableCopy)}
-                        className={`w-10 h-5 rounded-full transition-colors relative ${useReusableCopy ? 'bg-primary' : 'bg-slate-300'}`}
-                      >
-                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${useReusableCopy ? 'left-6' : 'left-1'}`}></div>
-                      </button>
-                      <span className={`text-[9px] font-black uppercase tracking-widest ${useReusableCopy ? 'text-primary' : 'text-slate-300'}`}>Reusable</span>
-                    </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
+                  {/* Account Selectors */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Página de Facebook</label>
+                    <select
+                      disabled={formData.platform === 'instagram'}
+                      required={formData.platform !== 'instagram'}
+                      value={formData.facebook_page_id}
+                      onChange={(e) => setFormData({ ...formData, facebook_page_id: e.target.value })}
+                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-xs font-bold disabled:opacity-30"
+                    >
+                      <option value="">Selecciona página...</option>
+                      {facebookPages.map(p => <option key={p.id} value={p.id}>{p.page_name}</option>)}
+                    </select>
                   </div>
 
-                  {useReusableCopy ? (
-                    <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
-                      <select
-                        required
-                        value={selectedCopyId}
-                        onChange={(e) => setSelectedCopyId(e.target.value)}
-                        className="w-full p-4 bg-white rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm font-bold shadow-sm"
-                      >
-                        <option value="">Selecciona un copy guardado...</option>
-                        {copies.map(copy => (
-                          <option key={copy.id} value={copy.id}>{copy.name}</option>
-                        ))}
-                      </select>
-                      {copies.length === 0 && (
-                        <p className="text-[9px] text-rose-500 font-bold px-2 italic">No tienes copys guardados aún.</p>
-                      )}
-                    </div>
-                  ) : (
-                    <textarea
-                      required
-                      value={formData.caption}
-                      onChange={(e) => setFormData({ ...formData, caption: e.target.value })}
-                      className="w-full p-4 bg-white rounded-2xl border-none focus:ring-2 focus:ring-primary/20 min-h-[100px] text-on-surface text-sm font-medium shadow-sm leading-relaxed animate-in fade-in slide-in-from-top-1 duration-300"
-                      placeholder="Escribe algo increíble para tu audiencia..."
-                    />
-                  )}
-
-                  {/* Contact Information Toggle */}
-                  {userSettings && (userSettings.whatsapp_enabled || userSettings.email_enabled || userSettings.website_enabled) && (
-                    <div className="flex items-center justify-between px-2 pt-2 border-t border-slate-100">
-                      <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-sm text-slate-400">contact_support</span>
-                        <span className="text-[10px] font-bold text-slate-500">Incluir info de contacto</span>
-                      </div>
-                      <button 
-                        type="button"
-                        onClick={() => setIncludeSignature(!includeSignature)}
-                        className={`w-10 h-5 rounded-full transition-colors relative ${includeSignature ? 'bg-indigo-500' : 'bg-slate-300'}`}
-                      >
-                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${includeSignature ? 'left-6' : 'left-1'}`}></div>
-                      </button>
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Cuenta de Instagram</label>
+                    <select
+                      disabled={formData.platform === 'facebook'}
+                      required={formData.platform !== 'facebook'}
+                      value={formData.instagram_account_id}
+                      onChange={(e) => setFormData({ ...formData, instagram_account_id: e.target.value })}
+                      className="w-full p-4 bg-surface-container-low rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-xs font-bold disabled:opacity-30"
+                    >
+                      <option value="">Selecciona cuenta...</option>
+                      {instagramAccounts.map(ig => <option key={ig.id} value={ig.id}>@{ig.username}</option>)}
+                    </select>
+                  </div>
                 </div>
 
-                {/* Media Section */}
-                <div className="space-y-3 p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Descripción / Caption</label>
+                  <textarea
+                    required
+                    value={formData.caption}
+                    onChange={(e) => setFormData({ ...formData, caption: e.target.value })}
+                    rows={4}
+                    className="w-full p-6 bg-surface-container-low rounded-[2rem] border-none focus:ring-2 focus:ring-primary/20 text-on-surface text-sm font-medium leading-relaxed resize-none custom-scrollbar"
+                    placeholder="Escribe lo que acompañará tu imagen..."
+                  />
+                </div>
+
+                {/* Media Selection Area */}
+                <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Contenido Visual</label>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[9px] font-black uppercase tracking-widest ${imageSource === 'upload' ? 'text-primary' : 'text-slate-300'}`}>Subir PC</span>
-                      <button 
+                    <label className="text-[10px] font-black text-on-surface-variant uppercase tracking-widest">Contenido Visual</label>
+                    <div className="flex bg-slate-100 p-1 rounded-xl">
+                      <button
                         type="button"
-                        onClick={() => setImageSource(imageSource === 'upload' ? 'library' : 'upload')}
-                        className={`w-10 h-5 rounded-full transition-colors relative ${imageSource === 'library' ? 'bg-primary' : 'bg-slate-300'}`}
+                        onClick={() => setImageSource('upload')}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                          imageSource === 'upload' ? 'bg-white shadow-sm text-primary' : 'text-slate-500'
+                        }`}
                       >
-                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${imageSource === 'library' ? 'left-6' : 'left-1'}`}></div>
+                        Subir
                       </button>
-                      <span className={`text-[9px] font-black uppercase tracking-widest ${imageSource === 'library' ? 'text-primary' : 'text-slate-300'}`}>Biblioteca</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImageSource('library');
+                          if (files.length === 0) fetchLibrary();
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                          imageSource === 'library' ? 'bg-white shadow-sm text-primary' : 'text-slate-500'
+                        }`}
+                      >
+                        Librería
+                      </button>
                     </div>
                   </div>
 
-                  <div className="mt-2 min-h-[100px] flex flex-col justify-center animate-in fade-in slide-in-from-top-1 duration-300">
+                  <div className="relative">
                     {imageSource === 'upload' ? (
-                      <div 
+                       <div 
                         onClick={() => fileInputRef.current?.click()}
-                        className="w-full p-6 bg-white rounded-2xl border-2 border-dashed border-primary/10 hover:border-primary/30 transition-all cursor-pointer flex flex-col items-center justify-center gap-2 group shadow-sm"
+                        className="group relative w-full aspect-video sm:aspect-[21/9] bg-surface-container-low rounded-[2rem] border-2 border-dashed border-primary/20 hover:border-primary/40 transition-all flex flex-col items-center justify-center cursor-pointer overflow-hidden p-6"
                       >
-                        <span className="material-symbols-outlined text-3xl text-primary/40 group-hover:scale-110 transition-transform">
-                          {imageFile ? 'check_circle' : 'cloud_upload'}
-                        </span>
-                        <span className="text-on-surface-variant font-black text-xs text-center truncate w-full px-4">
-                          {imageFile ? imageFile.name : 'Haz click para subir archivo'}
-                        </span>
-                        <input
-                          type="file"
-                          ref={fileInputRef}
-                          onChange={handleFileChange}
-                          className="hidden"
-                          accept="image/*,video/*"
-                        />
+                        {uploadPreviewUrl ? (
+                          <>
+                            {imageFile?.type.startsWith('video/') ? (
+                              <div className="w-full h-full flex items-center justify-center text-primary/40">
+                                <span className="material-symbols-outlined text-6xl">movie</span>
+                                <p className="absolute bottom-4 text-xs font-black text-primary uppercase tracking-widest">Archivo de Video Listo</p>
+                              </div>
+                            ) : (
+                                <img src={uploadPreviewUrl} alt="Upload preview" className="w-full h-full object-cover" />
+                            )}
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <span className="text-white font-black text-sm uppercase tracking-widest">Cambiar Archivo</span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-lg text-primary mb-4 group-hover:scale-110 transition-transform">
+                              <span className="material-symbols-outlined text-3xl">add_photo_alternate</span>
+                            </div>
+                            <p className="text-sm font-black text-on-surface uppercase tracking-widest">Seleccionar Archivo</p>
+                            <p className="text-[10px] text-on-surface-variant font-medium mt-1">Imágenes o Videos hasta 100MB</p>
+                          </>
+                        )}
+                        <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileChange} />
                       </div>
                     ) : (
-                      <div className="w-full">
-                        {mediaCurrentFolder && (
-                          <div className="flex items-center gap-2 mb-3 text-xs font-bold text-slate-500 px-1">
-                            <span className="material-symbols-outlined text-[14px]">folder_open</span>
-                            <span className="truncate flex-1">{mediaCurrentFolder.split('/').pop()}</span>
+                      <div className="space-y-4">
+                        {loadingLibrary ? (
+                          <div className="w-full aspect-video flex items-center justify-center">
+                              <div className="w-8 h-8 border-4 border-primary/10 border-t-primary rounded-full animate-spin" />
                           </div>
-                        )}
-                        {(folders.length > 0 || files.length > 0 || mediaCurrentFolder) ? (
-                          <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar snap-x">
-                            {/* Back Button if in subfolder */}
-                            {mediaCurrentFolder && (
-                              <div 
-                                onClick={handleGoBackFolder}
-                                className="relative flex-none w-24 h-24 snap-start cursor-pointer rounded-xl overflow-hidden group bg-white border border-slate-200 flex flex-col items-center justify-center hover:bg-slate-50 transition-all shadow-sm"
-                              >
-                                <span className="material-symbols-outlined text-3xl text-slate-400 group-hover:-translate-y-1 transition-transform">arrow_upward</span>
-                                <span className="text-[10px] font-bold text-slate-500 mt-1">Atrás</span>
-                              </div>
-                            )}
-
-                            {/* Render Folders */}
-                            {folders.map(folder => (
-                              <ImagePreview 
-                                key={folder.name}
-                                path=""
-                                fileName={folder.name} 
-                                selected={false}
-                                onClick={() => handleItemClick(folder)}
-                                isFolder={true}
-                              />
-                            ))}
+                        ) : files.length > 0 ? (
+                          <div className="grid grid-cols-4 sm:grid-cols-6 gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
 
                             {/* Render Files */}
                             {files.map(file => {
@@ -871,12 +555,12 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
               </form>
             </div>
             
-            <div className="p-6 bg-surface-container-low border-t border-slate-100">
+            <div className="p-5 sm:p-6 bg-surface-container-low border-t border-slate-100 mt-auto">
               <button
                 type="submit"
                 form="create-post-form"
                 disabled={loading}
-                className={`w-full py-4 text-white font-black text-sm uppercase tracking-widest rounded-2xl hover:translate-y-[-2px] hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2 ${
+                className={`w-full py-4 text-white font-black text-sm uppercase tracking-widest rounded-2xl hover:translate-y-[-2px] hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2 sm:gap-3 ${
                   prefill ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' : 'bg-primary shadow-primary/20'
                 } shadow-xl`}
               >

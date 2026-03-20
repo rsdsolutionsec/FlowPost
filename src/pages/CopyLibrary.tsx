@@ -12,6 +12,7 @@ interface Copy {
   content: string;
   suggested_at?: string;
   media_path?: string;
+  platform?: string;
   created_at: string;
 }
 
@@ -92,20 +93,14 @@ export default function CopyLibrary() {
     setSendAllResult(null);
 
     try {
-      // Fetch first active Facebook page (needed for post creation)
-      const { data: pages } = await supabase
-        .from('facebook_pages')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .limit(1);
+      // Fetch active Facebook page and Instagram account
+      const [pagesRes, igRes] = await Promise.all([
+        supabase.from('facebook_pages').select('id').eq('user_id', user.id).eq('is_active', true).limit(1),
+        supabase.from('instagram_accounts').select('id').eq('user_id', user.id).eq('is_active', true).limit(1),
+      ]);
 
-      const pageId = pages?.[0]?.id;
-      if (!pageId) {
-        alert('No hay ninguna página de Facebook conectada. Conecta una primero en Configuración.');
-        setSendingAll(false);
-        return;
-      }
+      const pageId = pagesRes.data?.[0]?.id || null;
+      const igId = igRes.data?.[0]?.id || null;
 
       // Pre-fetch all media to resolve filenames (batch lookup)
       const { data: allMedia } = await supabase
@@ -114,16 +109,15 @@ export default function CopyLibrary() {
         .eq('user_id', user.id);
 
       const mediaByName = new Map<string, string>();
-      interface MediaRow {
-        name: string;
-        url: string;
-      }
+      interface MediaRow { name: string; url: string; }
       ((allMedia as MediaRow[]) || []).forEach((m) => {
         mediaByName.set(m.name.toLowerCase(), m.url);
       });
 
-      // Build posts array
-      const postsToInsert = unsentCopies.map((copy: Copy) => {
+      // Build posts array — one or two posts per copy depending on platform
+      const postsToInsert: object[] = [];
+
+      for (const copy of unsentCopies) {
         // Resolve media URL from library
         let imageUrl = '';
         if (copy.media_path) {
@@ -135,23 +129,41 @@ export default function CopyLibrary() {
           }
         }
 
-        // Determine schedule time
         const scheduledAt = copy.suggested_at
           ? new Date(copy.suggested_at).toISOString()
-          : new Date(Date.now() + 60 * 60 * 1000).toISOString(); // default: 1 hour from now
+          : new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
-        return {
+        const platform = copy.platform || 'facebook';
+        const base = {
           user_id: user.id,
-          facebook_page_id: pageId,
           copy_id: copy.id,
           caption: null,
           custom_caption: null,
           image_path: imageUrl,
           scheduled_at: scheduledAt,
-          platform: 'facebook',
           status: 'pending',
         };
-      });
+
+        // Add Facebook post
+        if ((platform === 'facebook' || platform === 'both') && pageId) {
+          postsToInsert.push({ ...base, platform: 'facebook', facebook_page_id: pageId, instagram_account_id: null });
+        }
+
+        // Add Instagram post
+        if ((platform === 'instagram' || platform === 'both') && igId) {
+          postsToInsert.push({ ...base, platform: 'instagram', facebook_page_id: null, instagram_account_id: igId });
+        }
+
+        // Fallback: if no matching account found, still create FB post
+        if (postsToInsert.length === 0 && pageId) {
+          postsToInsert.push({ ...base, platform: 'facebook', facebook_page_id: pageId, instagram_account_id: null });
+        }
+      }
+
+      if (postsToInsert.length === 0) {
+        alert('No hay cuentas conectadas para publicar. Conecta Facebook o Instagram en Configuración.');
+        return;
+      }
 
       const { error } = await supabase.from('posts').insert(postsToInsert);
       if (error) throw error;
@@ -270,6 +282,7 @@ export default function CopyLibrary() {
           copyId: scheduleFromCopy.id,
           copyName: scheduleFromCopy.name,
           scheduledAt: scheduleFromCopy.suggested_at,
+          platform: scheduleFromCopy.platform,
           mediaUrl: scheduleFromCopy.media_path && scheduleFromCopy.media_path.startsWith('http') 
             ? scheduleFromCopy.media_path 
             : undefined,

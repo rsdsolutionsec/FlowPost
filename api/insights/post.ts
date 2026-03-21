@@ -48,14 +48,23 @@ export default async function handler(request: any, response: any) {
       platformPostId = meta.fb_post_id;
 
       const fb = await fetchFacebookPostInsights(platformPostId, page.page_access_token);
+
+      if (fb === null) {
+        // Post no longer exists on Facebook — mark it so analytics filters it out
+        await supabaseAdmin.from('posts').update({
+          metadata: { ...(meta as object), platform_deleted: true },
+        }).eq('id', post.id);
+        return response.status(200).json({ success: true, skipped: true, reason: 'post_not_found_on_platform' });
+      }
+
       insightData = {
         impressions: fb.impressions,
         reach: fb.reach,
         engagement: fb.engagement,
         clicks: fb.clicks,
         likes: fb.reactions?.like || 0,
-        comments: 0,
-        shares: 0,
+        comments: fb.comments,
+        shares: fb.shares,
         saves: 0,
         reactions: fb.reactions,
       };
@@ -70,6 +79,15 @@ export default async function handler(request: any, response: any) {
       platformPostId = meta.ig_post_id;
 
       const ig = await fetchInstagramMediaInsights(platformPostId, igToken, meta.media_type);
+
+      if (ig === null) {
+        // Post no longer exists on Instagram — mark it so analytics filters it out
+        await supabaseAdmin.from('posts').update({
+          metadata: { ...(meta as object), platform_deleted: true },
+        }).eq('id', post.id);
+        return response.status(200).json({ success: true, skipped: true, reason: 'post_not_found_on_platform' });
+      }
+
       insightData = {
         impressions: ig.impressions,
         reach: ig.reach,

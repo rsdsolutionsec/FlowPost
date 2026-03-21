@@ -13,6 +13,8 @@ export interface FBPostInsight {
   reach: number;
   engagement: number;
   clicks: number;
+  comments: number;
+  shares: number;
   reactions: Record<string, number>;
 }
 
@@ -54,7 +56,7 @@ export interface RateLimitInfo {
 export async function fetchFacebookPostInsights(
   fbPostId: string,
   accessToken: string
-): Promise<FBPostInsight> {
+): Promise<FBPostInsight | null> {
   const metrics = [
     'post_impressions',
     'post_impressions_unique',
@@ -72,12 +74,21 @@ export async function fetchFacebookPostInsights(
     reach: 0,
     engagement: 0,
     clicks: 0,
+    comments: 0,
+    shares: 0,
     reactions: {}
   };
 
   if (!response.ok || json.error) {
-    // Code 100: post deleted, doesn't exist, or doesn't support insights — return zeros
-    if (json?.error?.code === 100) return result;
+    if (json?.error?.code === 100) {
+      const msg: string = json.error?.message ?? '';
+      // Post no longer exists on Facebook — signal caller to mark as deleted
+      if (msg.includes('does not exist') || msg.includes('Invalid object ID') || msg.includes('deleted')) {
+        return null;
+      }
+      // Metric issue or other code-100 — return zeros gracefully
+      return result;
+    }
     throw createMetaError(json);
   }
 
@@ -102,6 +113,15 @@ export async function fetchFacebookPostInsights(
     }
   }
 
+  // Fetch comments and shares via fields API (not available as insight metrics)
+  const fieldsUrl = `${META_GRAPH_BASE}/${fbPostId}?fields=comments.summary(true),shares&access_token=${accessToken}`;
+  const fieldsRes = await fetch(fieldsUrl);
+  const fieldsJson = await fieldsRes.json();
+  if (fieldsRes.ok && !fieldsJson.error) {
+    result.comments = fieldsJson.comments?.summary?.total_count ?? 0;
+    result.shares = fieldsJson.shares?.count ?? 0;
+  }
+
   return result;
 }
 
@@ -111,7 +131,22 @@ export async function fetchInstagramMediaInsights(
   igPostId: string,
   accessToken: string,
   mediaType?: string
-): Promise<IGPostInsight> {
+): Promise<IGPostInsight | null> {
+  // 1. Get like_count and comments_count as fields (guaranteed for all media types)
+  const fieldsUrl = `${META_GRAPH_BASE}/${igPostId}?fields=like_count,comments_count&access_token=${accessToken}`;
+  const fieldsRes = await fetch(fieldsUrl);
+  const fieldsJson = await fieldsRes.json();
+
+  if (!fieldsRes.ok || fieldsJson.error) {
+    const errCode = fieldsJson?.error?.code;
+    const errMsg: string = fieldsJson?.error?.message ?? '';
+    if (errCode === 100 && (errMsg.includes('does not exist') || errMsg.includes('missing permissions') || errMsg.includes('does not support'))) {
+      // Post no longer exists on Instagram — signal caller to mark as deleted
+      return null;
+    }
+    throw createMetaError(fieldsJson);
+  }
+
   const result: IGPostInsight = {
     impressions: 0,
     reach: 0,
@@ -121,21 +156,6 @@ export async function fetchInstagramMediaInsights(
     shares: 0,
     saves: 0
   };
-
-  // 1. Get like_count and comments_count as fields (guaranteed for all media types)
-  const fieldsUrl = `${META_GRAPH_BASE}/${igPostId}?fields=like_count,comments_count&access_token=${accessToken}`;
-  const fieldsRes = await fetch(fieldsUrl);
-  const fieldsJson = await fieldsRes.json();
-
-  if (!fieldsRes.ok || fieldsJson.error) {
-    // If the post no longer exists on Instagram, return zeros instead of failing the sync
-    const errCode = fieldsJson?.error?.code;
-    const errMsg: string = fieldsJson?.error?.message ?? '';
-    if (errCode === 100 && (errMsg.includes('does not exist') || errMsg.includes('missing permissions') || errMsg.includes('does not support'))) {
-      return result;
-    }
-    throw createMetaError(fieldsJson);
-  }
 
   result.likes = fieldsJson.like_count ?? 0;
   result.comments = fieldsJson.comments_count ?? 0;

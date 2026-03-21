@@ -25,6 +25,7 @@ export default async function handler(request: any, response: any) {
   let syncedPosts = 0;
   let syncedAccounts = 0;
   let skipped = 0;
+  let markedDeleted = 0;
   let errors: string[] = [];
   let apiCalls = 0;
 
@@ -98,14 +99,23 @@ export default async function handler(request: any, response: any) {
           const fbInsights = await fetchFacebookPostInsights(platformPostId, page.page_access_token);
           apiCalls++;
 
+          if (fbInsights === null) {
+            // Post deleted on Facebook — mark it and skip upsert
+            await supabaseAdmin.from('posts').update({
+              metadata: { ...(meta as object), platform_deleted: true },
+            }).eq('id', post.id);
+            markedDeleted++;
+            continue;
+          }
+
           insightData = {
             impressions: fbInsights.impressions,
             reach: fbInsights.reach,
             engagement: fbInsights.engagement,
             clicks: fbInsights.clicks,
             likes: fbInsights.reactions?.like || 0,
-            comments: 0,
-            shares: 0,
+            comments: fbInsights.comments,
+            shares: fbInsights.shares,
             saves: 0,
             reactions: fbInsights.reactions,
           };
@@ -131,6 +141,15 @@ export default async function handler(request: any, response: any) {
 
           const igInsights = await fetchInstagramMediaInsights(platformPostId, igToken, meta.media_type);
           apiCalls++;
+
+          if (igInsights === null) {
+            // Post deleted on Instagram — mark it and skip upsert
+            await supabaseAdmin.from('posts').update({
+              metadata: { ...(meta as object), platform_deleted: true },
+            }).eq('id', post.id);
+            markedDeleted++;
+            continue;
+          }
 
           insightData = {
             impressions: igInsights.impressions,
@@ -264,6 +283,7 @@ export default async function handler(request: any, response: any) {
     synced_posts: syncedPosts,
     synced_accounts: syncedAccounts,
     skipped,
+    marked_deleted: markedDeleted,
     api_calls: apiCalls,
     errors: errors.length > 0 ? errors : undefined,
     rate_limited: apiCalls >= MAX_CALLS_PER_RUN,

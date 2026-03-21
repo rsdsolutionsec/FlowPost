@@ -112,7 +112,7 @@ export default function Analytics() {
       // 2. Post insights
       let piQuery = supabase
         .from('post_insights')
-        .select('*, posts!inner( facebook_page_id, instagram_account_id, scheduled_at )')
+        .select('*, posts!inner( facebook_page_id, instagram_account_id, scheduled_at, metadata )')
         .eq('user_id', user!.id);
 
       if (selectedAccount !== 'all') {
@@ -123,7 +123,11 @@ export default function Analytics() {
       }
 
       const { data: piData } = await piQuery;
-      setPostInsights(piData || []);
+      // Filter out posts deleted on the social platform (marked during sync)
+      const filtered = (piData || []).filter(
+        p => !(p.posts as any)?.metadata?.platform_deleted
+      );
+      setPostInsights(filtered);
 
       // 3. Account insights (for charts)
       let aiQuery = supabase

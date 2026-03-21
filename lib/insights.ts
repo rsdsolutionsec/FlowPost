@@ -180,6 +180,7 @@ export async function fetchFacebookPageInsights(
   const json = await response.json();
 
   if (!response.ok || json.error) {
+    if (json?.error?.code === 100) return [];
     throw createMetaError(json);
   }
 
@@ -232,6 +233,7 @@ export async function fetchInstagramAccountInsights(
   const json = await response.json();
 
   if (!response.ok || json.error) {
+    if (json?.error?.code === 100) return [];
     throw createMetaError(json);
   }
 

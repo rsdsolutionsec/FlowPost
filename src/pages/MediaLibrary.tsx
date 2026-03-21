@@ -615,7 +615,11 @@ export default function MediaLibrary() {
                   onFolderRename={() => renameFolder(item)}
                   isSelected={selectedItems.has(item.id)}
                   onSelect={() => toggleItemSelection(item.id)}
-                  onClick={() => {
+                  onClick={(e: React.MouseEvent) => {
+                    // No navegar si el click fue en el checkbox
+                    const target = e.target as HTMLElement;
+                    if (target.closest('[data-checkbox]')) return;
+                    
                     if (item.mimetype === 'folder') {
                        setCurrentPath(item.name);
                     }
@@ -654,17 +658,18 @@ export default function MediaLibrary() {
   );
 }
 
-function MediaCard({ item, onDelete, onFolderDelete, onFolderRename, onClick, isSelected = false, onSelect }: { item: MediaItem, onDelete: () => void, onFolderDelete?: () => void, onFolderRename?: () => void, onClick: () => void, isSelected?: boolean, onSelect?: () => void }) {
+function MediaCard({ item, onDelete, onFolderDelete, onFolderRename, onClick, isSelected = false, onSelect }: { item: MediaItem, onDelete: () => void, onFolderDelete?: () => void, onFolderRename?: () => void, onClick: (e: React.MouseEvent) => void, isSelected?: boolean, onSelect?: () => void }) {
   const isVideo = item.mimetype.startsWith('video/');
   const isFolder = item.mimetype === 'folder';
 
   return (
     <motion.div 
       layout
-      className={`group relative bg-white rounded-[2rem] sm:rounded-[2.5rem] shadow-sm hover:shadow-2xl hover:translate-y-[-4px] border-2 transition-all overflow-hidden aspect-square cursor-pointer ${
+      className={`group relative bg-white rounded-[2rem] sm:rounded-[2.5rem] shadow-sm hover:shadow-2xl hover:translate-y-[-4px] border-2 transition-all overflow-hidden aspect-square ${
         isSelected ? 'border-primary shadow-lg shadow-primary/20' : 'border-slate-100'
       }`}
-      onClick={onClick}
+      onClick={(e) => onClick(e)}
+      style={{ cursor: 'pointer' }}
     >
       {isFolder ? (
         <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-slate-400 group-hover:bg-primary/5 transition-colors">
@@ -675,6 +680,7 @@ function MediaCard({ item, onDelete, onFolderDelete, onFolderRename, onClick, is
           
           {/* Checkbox Overlay */}
           <div 
+            data-checkbox
             onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
             className={`absolute top-3 right-3 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all cursor-pointer ${
               isSelected 
@@ -723,6 +729,7 @@ function MediaCard({ item, onDelete, onFolderDelete, onFolderRename, onClick, is
 
           {/* Checkbox Overlay */}
           <div 
+            data-checkbox
             onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
             className={`absolute top-3 right-3 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all z-10 cursor-pointer ${
               isSelected 

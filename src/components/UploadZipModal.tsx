@@ -7,9 +7,10 @@ interface UploadZipModalProps {
   onClose: () => void;
   onConfirm: (extractResult: ExtractResult) => void;
   uploading?: boolean;
+  progress?: number;
 }
 
-export default function UploadZipModal({ isOpen, onClose, onConfirm, uploading = false }: UploadZipModalProps) {
+export default function UploadZipModal({ isOpen, onClose, onConfirm, uploading = false, progress = 0 }: UploadZipModalProps) {
   const [step, setStep] = useState<'select' | 'preview' | 'uploading'>('select');
   const [extractResult, setExtractResult] = useState<ExtractResult | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -223,13 +224,25 @@ export default function UploadZipModal({ isOpen, onClose, onConfirm, uploading =
               )}
 
               {step === 'uploading' && (
-                <div className="flex flex-col items-center justify-center gap-4 py-12">
+                <div className="flex flex-col items-center justify-center gap-6 py-12">
                   <div className="w-16 h-16 border-4 border-primary/10 border-t-primary rounded-full animate-spin" />
                   <div className="text-center">
                     <p className="font-bold text-slate-900 mb-1">Cargando archivo...</p>
-                    <p className="text-sm text-slate-500">
+                    <p className="text-sm text-slate-500 mb-6">
                       Esto puede tardar unos momentos dependiendo del tamaño
                     </p>
+                    
+                    {/* Progress Bar */}
+                    <div className="w-full max-w-xs mx-auto">
+                      <div className="bg-slate-200 rounded-full h-3 overflow-hidden mb-3">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${progress}%` }}
+                          className="h-full bg-gradient-to-r from-primary to-primary/80 rounded-full transition-all"
+                        />
+                      </div>
+                      <p className="text-lg font-bold text-primary">{progress}%</p>
+                    </div>
                   </div>
                 </div>
               )}

@@ -24,6 +24,8 @@ export default function MediaLibrary() {
   const [dragActive, setDragActive] = useState(false);
   const [showZipModal, setShowZipModal] = useState(false);
   const [zipUploading, setZipUploading] = useState(false);
+  const [zipProgress, setZipProgress] = useState(0);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -256,6 +258,7 @@ export default function MediaLibrary() {
       }
 
       setShowZipModal(false);
+      setZipProgress(0);
       fetchMedia();
       alert(`✅ Carpeta cargada exitosamente con ${extractResult.fileCount} archivos`);
     } catch (error: any) {
@@ -263,6 +266,61 @@ export default function MediaLibrary() {
       console.error(error);
     } finally {
       setZipUploading(false);
+      setZipProgress(0);
+    }
+  };
+
+  // Función para eliminar items seleccionados
+  const deleteSelectedItems = async () => {
+    if (selectedItems.size === 0) return;
+    
+    const message = `¿Eliminar ${selectedItems.size} elemento(s)? Esta acción no se puede deshacer.`;
+    if (!confirm(message)) return;
+
+    try {
+      const selectedArray = Array.from(selectedItems);
+      
+      // Eliminar archivos de R2
+      for (const id of selectedArray) {
+        const item = items.find(i => i.id === id);
+        if (item?.url && item.mimetype !== 'folder') {
+          const filename = item.url.split('/').pop();
+          await fetch('/api/media/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: `${user?.id}/${filename}` })
+          }).catch(() => {});
+        }
+      }
+
+      // Eliminar de BD
+      for (const id of selectedArray) {
+        await supabase.from('media').delete().eq('id', id);
+      }
+
+      setSelectedItems(new Set());
+      fetchMedia();
+      alert(`✅ ${selectedArray.length} elemento(s) eliminado(s) exitosamente.`);
+    } catch (error: any) {
+      alert('Error eliminando: ' + error.message);
+    }
+  };
+
+  const toggleItemSelection = (id: string) => {
+    const newSelected = new Set(selectedItems);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedItems(newSelected);
+  };
+
+  const selectAllInView = () => {
+    if (selectedItems.size === filteredItems.length && selectedItems.size > 0) {
+      setSelectedItems(new Set());
+    } else {
+      setSelectedItems(new Set(filteredItems.map(item => item.id)));
     }
   };
 
@@ -300,33 +358,34 @@ export default function MediaLibrary() {
       const { data: allItems, error: fetchError } = await supabase
         .from('media')
         .select('*')
-        .eq('user_id', user?.id)
-        .ilike('path', `${folder.name}%`);
+        .eq('user_id', user?.id);
 
       if (fetchError) throw fetchError;
 
+      // Filter items that are in this folder
+      const itemsToDelete = allItems?.filter(item => 
+        item.id === folder.id || 
+        item.path === folder.name || 
+        item.path?.startsWith(folder.name + '/') ||
+        item.path?.includes('/' + folder.name)
+      ) || [];
+
       // 2. Eliminar archivos de R2 (solo los que tengan URL)
-      if (allItems && allItems.length > 0) {
-        for (const item of allItems) {
-          if (item.url && item.mimetype !== 'folder') {
-            const filename = item.url.split('/').pop();
-            await fetch('/api/media/delete', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ filename: `${user?.id}/${filename}` })
-            }).catch(() => {}); // Ignorar errores en eliminación individual
-          }
+      for (const item of itemsToDelete) {
+        if (item.url && item.mimetype !== 'folder') {
+          const filename = item.url.split('/').pop();
+          await fetch('/api/media/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: `${user?.id}/${filename}` })
+          }).catch(() => {});
         }
       }
 
       // 3. Eliminar la carpeta y todos sus contenidos de BD
-      const { error: deleteError } = await supabase
-        .from('media')
-        .delete()
-        .eq('id', folder.id)
-        .or(`path.ilike.${folder.name}%`);
-
-      if (deleteError) throw deleteError;
+      for (const item of itemsToDelete) {
+        await supabase.from('media').delete().eq('id', item.id);
+      }
 
       fetchMedia();
       alert(`Carpeta "${folder.name}" y su contenido eliminado exitosamente.`);
@@ -500,6 +559,23 @@ export default function MediaLibrary() {
                {filter === 'all' ? 'Todo' : filter === 'folder' ? 'Carpetas' : filter}
              </button>
            ))}
+           
+           {/* Selection buttons */}
+           <button
+             onClick={selectAllInView}
+             className="px-6 py-4 rounded-2xl sm:rounded-3xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap bg-white text-slate-500 border border-slate-100 hover:bg-slate-50"
+           >
+             {selectedItems.size === 0 ? 'Seleccionar' : `${selectedItems.size} Seleccionados`}
+           </button>
+           
+           {selectedItems.size > 0 && (
+             <button
+               onClick={deleteSelectedItems}
+               className="px-6 py-4 rounded-2xl sm:rounded-3xl text-[10px] sm:text-xs font-black uppercase tracking-widest transition-all whitespace-nowrap bg-rose-500 text-white hover:bg-rose-600 shadow-lg shadow-rose-500/20"
+             >
+               Eliminar {selectedItems.size}
+             </button>
+           )}
         </div>
       </div>
 
@@ -537,6 +613,8 @@ export default function MediaLibrary() {
                   onDelete={() => deleteItem(item)}
                   onFolderDelete={() => deleteFolder(item)}
                   onFolderRename={() => renameFolder(item)}
+                  isSelected={selectedItems.has(item.id)}
+                  onSelect={() => toggleItemSelection(item.id)}
                   onClick={() => {
                     if (item.mimetype === 'folder') {
                        setCurrentPath(item.name);
@@ -570,19 +648,22 @@ export default function MediaLibrary() {
         onClose={() => setShowZipModal(false)}
         onConfirm={handleZipUpload}
         uploading={zipUploading}
+        progress={zipProgress}
       />
     </motion.div>
   );
 }
 
-function MediaCard({ item, onDelete, onFolderDelete, onFolderRename, onClick }: { item: MediaItem, onDelete: () => void, onFolderDelete?: () => void, onFolderRename?: () => void, onClick: () => void }) {
+function MediaCard({ item, onDelete, onFolderDelete, onFolderRename, onClick, isSelected = false, onSelect }: { item: MediaItem, onDelete: () => void, onFolderDelete?: () => void, onFolderRename?: () => void, onClick: () => void, isSelected?: boolean, onSelect?: () => void }) {
   const isVideo = item.mimetype.startsWith('video/');
   const isFolder = item.mimetype === 'folder';
 
   return (
     <motion.div 
       layout
-      className="group relative bg-white rounded-[2rem] sm:rounded-[2.5rem] shadow-sm hover:shadow-2xl hover:translate-y-[-4px] border border-slate-100 transition-all overflow-hidden aspect-square cursor-pointer"
+      className={`group relative bg-white rounded-[2rem] sm:rounded-[2.5rem] shadow-sm hover:shadow-2xl hover:translate-y-[-4px] border-2 transition-all overflow-hidden aspect-square cursor-pointer ${
+        isSelected ? 'border-primary shadow-lg shadow-primary/20' : 'border-slate-100'
+      }`}
       onClick={onClick}
     >
       {isFolder ? (
@@ -591,6 +672,19 @@ function MediaCard({ item, onDelete, onFolderDelete, onFolderRename, onClick }: 
           <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-900 px-4 text-center truncate w-full">
             {item.name}
           </p>
+          
+          {/* Checkbox Overlay */}
+          <div 
+            onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
+            className={`absolute top-3 right-3 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all cursor-pointer ${
+              isSelected 
+                ? 'bg-primary border-primary' 
+                : 'bg-white/80 border-slate-300 group-hover:bg-white group-hover:border-primary'
+            }`}>
+            {isSelected && (
+              <span className="material-symbols-outlined text-sm text-white">check</span>
+            )}
+          </div>
           
           {/* Carpeta Overlay Actions */}
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
@@ -626,6 +720,19 @@ function MediaCard({ item, onDelete, onFolderDelete, onFolderRename, onClick }: 
               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
             />
           )}
+
+          {/* Checkbox Overlay */}
+          <div 
+            onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
+            className={`absolute top-3 right-3 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all z-10 cursor-pointer ${
+              isSelected 
+                ? 'bg-primary border-primary' 
+                : 'bg-white/80 border-slate-300 group-hover:bg-white group-hover:border-primary'
+            }`}>
+            {isSelected && (
+              <span className="material-symbols-outlined text-sm text-white">check</span>
+            )}
+          </div>
 
           {/* Overlay Actions */}
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-4 flex flex-col justify-end text-white h-1/2 opacity-0 group-hover:opacity-100 transition-opacity">

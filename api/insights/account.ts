@@ -69,9 +69,33 @@ export default async function handler(request: any, response: any) {
       insightDays = await fetchInstagramAccountInsights(platformAccountId, token, since, now);
     }
 
+    // Pre-fetch previous day's followers for delta computation (IG only)
+    let previousDayFollowers: number | null = null;
+    if (platform === 'instagram' && insightDays.length > 0) {
+      const { data: prevRow } = await supabaseAdmin
+        .from('account_insights')
+        .select('followers')
+        .eq('account_ref_id', accountRefId)
+        .lt('metric_date', insightDays[0].date)
+        .order('metric_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      previousDayFollowers = prevRow?.followers ?? null;
+    }
+
     // Upsert each day
     let upserted = 0;
     for (const day of insightDays) {
+      let followers_delta = 0;
+      let followers_growth_pct = 0;
+      if (platform === 'instagram' && previousDayFollowers !== null) {
+        followers_delta = day.followers - previousDayFollowers;
+        followers_growth_pct = previousDayFollowers > 0
+          ? (followers_delta / previousDayFollowers) * 100
+          : 0;
+      }
+      previousDayFollowers = day.followers;
+
       const { error: upsertError } = await supabaseAdmin
         .from('account_insights')
         .upsert({
@@ -84,6 +108,11 @@ export default async function handler(request: any, response: any) {
           reach: day.reach,
           engagement: day.engagement,
           followers: day.followers,
+          profile_views: day.profile_views ?? 0,
+          website_clicks: day.website_clicks ?? 0,
+          accounts_engaged: day.accounts_engaged ?? 0,
+          followers_delta,
+          followers_growth_pct,
           fetched_at: now.toISOString(),
         }, { onConflict: 'account_ref_id,metric_date' });
 

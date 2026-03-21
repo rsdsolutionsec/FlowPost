@@ -8,6 +8,8 @@ import OverviewCards from '../components/analytics/OverviewCards';
 import TrendChart from '../components/analytics/TrendChart';
 import EngagementChart from '../components/analytics/EngagementChart';
 import TopPostsTable from '../components/analytics/TopPostsTable';
+import FollowerGrowthChart from '../components/analytics/FollowerGrowthChart';
+import BestHoursChart from '../components/analytics/BestHoursChart';
 
 interface AccountOption {
   id: string;
@@ -32,12 +34,23 @@ export default function Analytics() {
   const [postInsights, setPostInsights] = useState<any[]>([]);
   const [accountInsights, setAccountInsights] = useState<any[]>([]);
 
+  // Best hours (IG only)
+  const [bestHoursData, setBestHoursData] = useState<{ day: number; hour: number; value: number }[]>([]);
+  const [bestHoursLoading, setBestHoursLoading] = useState(false);
+
   const dateRange = useMemo(() => {
     const until = new Date();
     const since = new Date();
     since.setDate(since.getDate() - days);
     return { since, until };
   }, [days]);
+
+  // Derived account context
+  const selectedAccountObj = useMemo(
+    () => accounts.find(a => a.id === selectedAccount) ?? null,
+    [accounts, selectedAccount]
+  );
+  const isSingleInstagramAccount = selectedAccountObj?.platform === 'instagram';
 
   // Fetch accounts
   useEffect(() => {
@@ -61,6 +74,24 @@ export default function Analytics() {
     if (!user) return;
     fetchData();
   }, [user, days, selectedAccount]);
+
+  // Fetch best hours when single IG account is selected
+  useEffect(() => {
+    if (!user || !isSingleInstagramAccount || !selectedAccount) {
+      setBestHoursData([]);
+      return;
+    }
+    setBestHoursLoading(true);
+    fetch('/api/insights/best-hours', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountRefId: selectedAccount, userId: user.id }),
+    })
+      .then(r => r.json())
+      .then(json => setBestHoursData(json.data || []))
+      .catch(() => setBestHoursData([]))
+      .finally(() => setBestHoursLoading(false));
+  }, [user, selectedAccount, isSingleInstagramAccount]);
 
   async function fetchData() {
     setLoading(true);
@@ -116,7 +147,7 @@ export default function Analytics() {
     }
   }
 
-  // Aggregated overview metrics
+  // Aggregated overview metrics (from post_insights)
   const overview = useMemo(() => {
     const totalImpressions = postInsights.reduce((s, p) => s + (p.impressions || 0), 0);
     const totalReach = postInsights.reduce((s, p) => s + (p.reach || 0), 0);
@@ -124,6 +155,18 @@ export default function Analytics() {
     const rate = totalImpressions > 0 ? (totalEngagement / totalImpressions) * 100 : 0;
     return { impressions: totalImpressions, reach: totalReach, engagement: totalEngagement, engagementRate: rate };
   }, [postInsights]);
+
+  // IG-specific account metrics (summed over period)
+  const igOverview = useMemo(() => {
+    return accountInsights.reduce(
+      (acc, ai) => ({
+        profileViews: acc.profileViews + (ai.profile_views || 0),
+        accountsEngaged: acc.accountsEngaged + (ai.accounts_engaged || 0),
+        websiteClicks: acc.websiteClicks + (ai.website_clicks || 0),
+      }),
+      { profileViews: 0, accountsEngaged: 0, websiteClicks: 0 }
+    );
+  }, [accountInsights]);
 
   // Chart data: aggregate account_insights by date
   const trendData = useMemo(() => {
@@ -153,6 +196,20 @@ export default function Analytics() {
     }
     return Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
   }, [postInsights]);
+
+  // Follower growth chart data (IG only — uses account_insights)
+  const followerGrowthData = useMemo(() => {
+    return accountInsights
+      .filter(ai => ai.followers > 0)
+      .map(ai => ({
+        date: ai.metric_date,
+        followers: ai.followers || 0,
+        followers_delta: ai.followers_delta || 0,
+        followers_growth_pct: ai.followers_growth_pct || 0,
+      }));
+  }, [accountInsights]);
+
+  const showFollowerGrowth = followerGrowthData.length > 0;
 
   async function handleImport() {
     if (!user || importing) return;
@@ -347,6 +404,10 @@ export default function Analytics() {
           engagement={overview.engagement}
           engagementRate={overview.engagementRate}
           loading={loading}
+          showIgMetrics={isSingleInstagramAccount}
+          profileViews={igOverview.profileViews}
+          accountsEngaged={igOverview.accountsEngaged}
+          websiteClicks={igOverview.websiteClicks}
         />
 
         {/* Charts */}
@@ -358,6 +419,16 @@ export default function Analytics() {
             <EngagementChart data={engagementData} loading={loading} />
           </div>
         </div>
+
+        {/* Follower Growth (IG only, when data available) */}
+        {(showFollowerGrowth || loading) && (
+          <FollowerGrowthChart data={followerGrowthData} loading={loading} />
+        )}
+
+        {/* Best Hours (single IG account only) */}
+        {isSingleInstagramAccount && (
+          <BestHoursChart data={bestHoursData} loading={bestHoursLoading} />
+        )}
 
         {/* Top Posts */}
         <TopPostsTable

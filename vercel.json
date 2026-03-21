@@ -25,6 +25,9 @@
     },
     "api/insights/import-posts.ts": {
       "includeFiles": "lib/**"
+    },
+    "api/insights/best-hours.ts": {
+      "includeFiles": "lib/**"
     }
   },
   "crons": [

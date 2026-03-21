@@ -122,11 +122,11 @@ export async function fetchInstagramMediaInsights(
   result.likes = fieldsJson.like_count ?? 0;
   result.comments = fieldsJson.comments_count ?? 0;
 
-  // 2. Get insight metrics (impressions, reach, saved are universal; shares for REELS)
+  // 2. Get insight metrics (content_views replaces impressions in v18+; saves replaces saved)
   const isReel = mediaType?.toUpperCase() === 'VIDEO' || mediaType?.toUpperCase() === 'REELS';
   const insightMetrics = isReel
-    ? ['impressions', 'reach', 'saved', 'shares'].join(',')
-    : ['impressions', 'reach', 'saved'].join(',');
+    ? ['content_views', 'reach', 'saves', 'shares'].join(',')
+    : ['content_views', 'reach', 'saves'].join(',');
 
   const insightsUrl = `${META_GRAPH_BASE}/${igPostId}/insights?metric=${insightMetrics}&access_token=${accessToken}`;
   const insightsRes = await fetch(insightsUrl);
@@ -136,13 +136,13 @@ export async function fetchInstagramMediaInsights(
     for (const entry of insightsJson.data || []) {
       const value = entry.values?.[0]?.value ?? 0;
       switch (entry.name) {
-        case 'impressions':
+        case 'content_views':
           result.impressions = value;
           break;
         case 'reach':
           result.reach = value;
           break;
-        case 'saved':
+        case 'saves':
           result.saves = value;
           break;
         case 'shares':
@@ -220,7 +220,7 @@ export async function fetchInstagramAccountInsights(
 ): Promise<AccountInsightDay[]> {
   const sinceUnix = Math.floor(since.getTime() / 1000);
   const untilUnix = Math.floor(until.getTime() / 1000);
-  const metrics = 'impressions,reach,follower_count';
+  const metrics = 'views,reach,follower_count';
 
   const url = `${META_GRAPH_BASE}/${igBusinessId}/insights?metric=${metrics}&period=day&since=${sinceUnix}&until=${untilUnix}&access_token=${accessToken}`;
   const response = await fetch(url);
@@ -243,7 +243,7 @@ export async function fetchInstagramAccountInsights(
       const day = dayMap.get(date)!;
 
       switch (entry.name) {
-        case 'impressions':
+        case 'views':
           day.impressions = val.value ?? 0;
           break;
         case 'reach':

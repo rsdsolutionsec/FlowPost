@@ -116,17 +116,23 @@ export async function fetchInstagramMediaInsights(
   const fieldsJson = await fieldsRes.json();
 
   if (!fieldsRes.ok || fieldsJson.error) {
+    // If the post no longer exists on Instagram, return zeros instead of failing the sync
+    const errCode = fieldsJson?.error?.code;
+    const errMsg: string = fieldsJson?.error?.message ?? '';
+    if (errCode === 100 && (errMsg.includes('does not exist') || errMsg.includes('missing permissions') || errMsg.includes('does not support'))) {
+      return result;
+    }
     throw createMetaError(fieldsJson);
   }
 
   result.likes = fieldsJson.like_count ?? 0;
   result.comments = fieldsJson.comments_count ?? 0;
 
-  // 2. Get insight metrics (content_views replaces impressions in v18+; saves replaces saved)
+  // 2. Get insight metrics (reach + saves for images; add shares for reels)
   const isReel = mediaType?.toUpperCase() === 'VIDEO' || mediaType?.toUpperCase() === 'REELS';
   const insightMetrics = isReel
-    ? ['content_views', 'reach', 'saves', 'shares'].join(',')
-    : ['content_views', 'reach', 'saves'].join(',');
+    ? ['reach', 'saves', 'shares'].join(',')
+    : ['reach', 'saves'].join(',');
 
   const insightsUrl = `${META_GRAPH_BASE}/${igPostId}/insights?metric=${insightMetrics}&access_token=${accessToken}`;
   const insightsRes = await fetch(insightsUrl);
@@ -136,9 +142,6 @@ export async function fetchInstagramMediaInsights(
     for (const entry of insightsJson.data || []) {
       const value = entry.values?.[0]?.value ?? 0;
       switch (entry.name) {
-        case 'content_views':
-          result.impressions = value;
-          break;
         case 'reach':
           result.reach = value;
           break;

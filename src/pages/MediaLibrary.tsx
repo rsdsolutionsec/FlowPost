@@ -191,22 +191,34 @@ export default function MediaLibrary() {
         const { path, file } = extractResult.files[i];
 
         // Construir el path en R2: user_id/folder1/subfolder2/filename.ext
-        const fileExt = file.name.split('.').pop();
+        const fileExt = file.name.split('.').pop() || '';
         const randomId = Math.random().toString(36).substring(2);
         const fileName = `${randomId}_${Date.now()}.${fileExt}`;
         
-        // Replace original filename with random one, preserving directory structure
-        const dirPath = path.substring(0, path.lastIndexOf('/'));
-        const r2Path = `${user.id}/${dirPath}/${fileName}`;
+        // Get the directory path (everything except the filename)
+        const lastSlashIndex = path.lastIndexOf('/');
+        const dirPath = lastSlashIndex >= 0 ? path.substring(0, lastSlashIndex) : '';
+        
+        // Build R2 path, avoiding double slashes
+        const r2Path = dirPath 
+          ? `${user.id}/${dirPath}/${fileName}`
+          : `${user.id}/${fileName}`;
+
+        // Determine correct MIME type from extension
+        const { getMimeTypeFromExtension } = await import('../../lib/zipHandler');
+        const mimeType = getMimeTypeFromExtension(file.name) || file.type || 'application/octet-stream';
 
         // 1. Get presigned URL
         const presignRes = await fetch('/api/media/presign', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: r2Path, contentType: file.type })
+          body: JSON.stringify({ filename: r2Path, contentType: mimeType })
         });
 
-        if (!presignRes.ok) throw new Error('Failed to get upload URL');
+        if (!presignRes.ok) {
+          const errorData = await presignRes.json().catch(() => ({}));
+          throw new Error(`Failed to get upload URL: ${errorData.error || presignRes.statusText}`);
+        }
         const { url, publicUrl } = await presignRes.json();
 
         // 2. Upload to R2

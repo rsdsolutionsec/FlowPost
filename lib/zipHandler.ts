@@ -58,7 +58,7 @@ const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 500MB
 /**
  * Obtiene el MIME type basado en la extensión del archivo
  */
-function getMimeTypeFromExtension(filename: string): string {
+export function getMimeTypeFromExtension(filename: string): string {
   const extension = filename.split('.').pop()?.toLowerCase() || '';
   return EXTENSION_TO_MIME[extension] || '';
 }

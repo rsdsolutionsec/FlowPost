@@ -220,7 +220,7 @@ export async function fetchInstagramAccountInsights(
 ): Promise<AccountInsightDay[]> {
   const sinceUnix = Math.floor(since.getTime() / 1000);
   const untilUnix = Math.floor(until.getTime() / 1000);
-  const metrics = 'views,reach,follower_count';
+  const metrics = 'reach,follower_count';
 
   const url = `${META_GRAPH_BASE}/${igBusinessId}/insights?metric=${metrics}&period=day&since=${sinceUnix}&until=${untilUnix}&access_token=${accessToken}`;
   const response = await fetch(url);
@@ -243,9 +243,6 @@ export async function fetchInstagramAccountInsights(
       const day = dayMap.get(date)!;
 
       switch (entry.name) {
-        case 'views':
-          day.impressions = val.value ?? 0;
-          break;
         case 'reach':
           day.reach = val.value ?? 0;
           break;

@@ -52,7 +52,9 @@ export default function MediaLibrary() {
         query = query.eq('path', currentPath);
       }
 
-      const { data, error } = await query.order('created_at', { ascending: false });
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .limit(10000);  // Support large collections
 
       if (error) throw error;
       setItems(data || []);
@@ -117,65 +119,55 @@ export default function MediaLibrary() {
   const createFolderStructure = async (folderPaths: string[]): Promise<void> => {
     if (!user) return;
 
+    // Crear un Set de todas las rutas únicas de carpetas que necesitan ser creadas
+    const allFolderPaths = new Set<string>();
+    
     for (const folderPath of folderPaths) {
       const parts = folderPath.split('/');
-      const folderName = parts[parts.length - 1]; // Last part is the folder name
-      const parentPath = parts.slice(0, -1).join('/') || currentPath; // Parent path, default to currentPath
-
-      // Only create if parent path equals currentPath or a valid parent
-      // This ensures we create in the right hierarchy
-      if (parentPath === currentPath || parts.length - 1 === 0) {
-        try {
-          await supabase.from('media').insert({
-            user_id: user.id,
-            name: folderName,
-            mimetype: 'folder',
-            path: parentPath === currentPath ? currentPath : currentPath + (currentPath === 'root' ? '' : '/') + parentPath,
-            url: '',
-            size: 0
-          });
-        } catch (error: any) {
-          // Ignorar si ya existe
-          if (!error.message.includes('duplicate')) {
-            console.error('Error creating folder:', error);
-          }
-        }
+      
+      // Agregar cada nivel de la jerarquía
+      for (let i = 1; i <= parts.length; i++) {
+        const fullPath = parts.slice(0, i).join('/');
+        allFolderPaths.add(fullPath);
       }
     }
 
-    // Second pass: create all the nested folders
-    const createdPaths = new Set([currentPath]);
-    for (const folderPath of folderPaths.sort()) {
-      const parts = folderPath.split('/');
-      
-      // Create each intermediate folder
-      for (let i = 1; i <= parts.length; i++) {
-        const currentFolder = parts.slice(0, i).join('/');
-        const folderName = parts[i - 1];
-        
-        if (!createdPaths.has(currentFolder)) {
-          const parentFolderPath = i === 1 
-            ? currentPath 
-            : currentPath === 'root' 
-              ? parts.slice(0, i - 1).join('/') 
-              : currentPath + '/' + parts.slice(0, i - 1).join('/');
+    // Crear todas las carpetas en orden (por profundidad: padres antes que hijos)
+    const sortedPaths = Array.from(allFolderPaths).sort((a, b) => {
+      // Ordenar por profundidad (menos slashes = más arriba en la jerarquía)
+      const depthA = (a.match(/\//g) || []).length;
+      const depthB = (b.match(/\//g) || []).length;
+      return depthA - depthB;
+    });
 
-          try {
-            await supabase.from('media').insert({
-              user_id: user.id,
-              name: folderName,
-              mimetype: 'folder',
-              path: parentFolderPath,
-              url: '',
-              size: 0
-            });
-            createdPaths.add(currentFolder);
-          } catch (error: any) {
-            // Ignorar si ya existe
-            if (!error.message.includes('duplicate')) {
-              console.error('Error creating folder:', error);
-            }
-          }
+    for (const folderPath of sortedPaths) {
+      const parts = folderPath.split('/');
+      const folderName = parts[parts.length - 1]; // Último elemento es el nombre
+      
+      // Calcular el path padre
+      let parentPath: string;
+      if (parts.length === 1) {
+        // Carpeta de primer nivel
+        parentPath = currentPath;
+      } else {
+        // Subcarpeta: el padre es todo excepto el último elemento
+        const parentFolderPath = parts.slice(0, -1).join('/');
+        parentPath = currentPath === 'root' ? parentFolderPath : currentPath + '/' + parentFolderPath;
+      }
+
+      try {
+        await supabase.from('media').insert({
+          user_id: user.id,
+          name: folderName,
+          mimetype: 'folder',
+          path: parentPath,
+          url: '',
+          size: 0
+        });
+      } catch (error: any) {
+        // Ignorar si ya existe (duplicate key error)
+        if (!error.message.includes('duplicate')) {
+          console.error('Error creating folder:', error);
         }
       }
     }

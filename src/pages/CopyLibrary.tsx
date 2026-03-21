@@ -443,5 +443,3 @@ function CreateCopyModal({ isOpen, onClose, onSuccess, campaigns, editData }: an
     </div>
   );
 }
-
-

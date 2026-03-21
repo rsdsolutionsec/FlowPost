@@ -689,7 +689,14 @@ function MediaCard({ item, onDelete, onFolderDelete, onFolderRename, onClick, is
       style={{ cursor: 'pointer' }}
     >
       {isFolder ? (
-        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-slate-400 group-hover:bg-primary/5 transition-colors">
+        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-slate-400 group-hover:bg-primary/5 transition-colors" onClick={(e) => {
+          // Para carpetas: si el click es en el checkbox o sus hijos, no lanzar el click del padre
+          const target = e.target as HTMLElement;
+          if (target.closest('[data-checkbox]')) {
+            e.stopPropagation();
+            return;
+          }
+        }}>
           <span className="material-symbols-outlined text-5xl mb-2 group-hover:scale-110 transition-transform">folder</span>
           <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-900 px-4 text-center truncate w-full">
             {item.name}

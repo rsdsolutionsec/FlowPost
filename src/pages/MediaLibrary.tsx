@@ -249,7 +249,7 @@ export default function MediaLibrary() {
           user_id: user.id,
           name: file.name,
           url: publicUrl,
-          mimetype: file.type,
+          mimetype: mimeType,
           size: file.size,
           path: mediaFolderPath
         });

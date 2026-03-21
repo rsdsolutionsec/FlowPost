@@ -628,7 +628,11 @@ export default function MediaLibrary() {
                     if (target.closest('[data-checkbox]')) return;
                     
                     if (item.mimetype === 'folder') {
-                       setCurrentPath(item.name);
+                       if (currentPath === 'root') {
+                         setCurrentPath(item.name);
+                       } else {
+                         setCurrentPath(currentPath + '/' + item.name);
+                       }
                     }
                   }}
                 />
@@ -641,10 +645,18 @@ export default function MediaLibrary() {
       {currentPath !== 'root' && (
         <div className="mt-8 flex items-center gap-3">
            <button 
-             onClick={() => setCurrentPath('root')}
-             className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-all"
+             onClick={() => {
+               const parts = currentPath.split('/');
+               if (parts.length === 1) {
+                 setCurrentPath('root');
+               } else {
+                 setCurrentPath(parts.slice(0, -1).join('/'));
+               }
+             }}
+             className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-all flex items-center gap-2"
            >
-             Volver a raíz
+             <span className="material-symbols-outlined text-sm">arrow_back</span>
+             Atrás
            </button>
            <div className="flex items-center gap-2 text-slate-400">
              <span className="material-symbols-outlined text-sm">folder_open</span>

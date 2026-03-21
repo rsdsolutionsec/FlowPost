@@ -21,6 +21,32 @@ export interface FolderTree {
   children?: FolderTree[];
 }
 
+// Mapeo de extensiones de archivo a MIME types
+const EXTENSION_TO_MIME: { [key: string]: string } = {
+  // Imágenes
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  tiff: 'image/tiff',
+  
+  // Videos
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+  avi: 'video/x-msvideo',
+  mkv: 'video/x-matroska',
+  flv: 'video/x-flv',
+  wmv: 'video/x-ms-wmv',
+  '3gp': 'video/3gpp',
+  m3u8: 'application/x-mpegURL',
+  ts: 'video/mp2t',
+};
+
 // Tipos de archivo permitidos (mismo que en MediaLibrary)
 const ALLOWED_MIME_TYPES = [
   'image/',  // Todas las imágenes
@@ -30,9 +56,18 @@ const ALLOWED_MIME_TYPES = [
 const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 500MB
 
 /**
- * Valida si un tipo MIME está permitido
+ * Obtiene el MIME type basado en la extensión del archivo
  */
-function isAllowedMimeType(mimeType: string): boolean {
+function getMimeTypeFromExtension(filename: string): string {
+  const extension = filename.split('.').pop()?.toLowerCase() || '';
+  return EXTENSION_TO_MIME[extension] || '';
+}
+
+/**
+ * Verifica si un archivo es permitido basado en su extensión
+ */
+function isAllowedFile(filename: string): boolean {
+  const mimeType = getMimeTypeFromExtension(filename);
   return ALLOWED_MIME_TYPES.some(allowed => mimeType.startsWith(allowed));
 }
 
@@ -90,9 +125,9 @@ export async function extractFilesFromZip(zipFile: File): Promise<ExtractResult>
       const blob = await zipEntry.async('blob');
       const file = new File([blob], zipEntry.name, { type: blob.type });
 
-      // Validar tipo de archivo
-      if (!isAllowedMimeType(file.type)) {
-        invalidFiles.push(`${filePath} (tipo: ${file.type || 'desconocido'})`);
+      // Validar tipo de archivo basado en extensión
+      if (!isAllowedFile(filePath)) {
+        invalidFiles.push(`${filePath}`);
         continue;
       }
 
@@ -110,7 +145,7 @@ export async function extractFilesFromZip(zipFile: File): Promise<ExtractResult>
       return {
         success: false,
         files: [],
-        error: `Se encontraron archivos no permitidos (solo imágenes y videos):\n${invalidFiles.join('\n')}`
+        error: `Se encontraron archivos no permitidos. Solo se aceptan imágenes y videos:\n${invalidFiles.join('\n')}`
       };
     }
 

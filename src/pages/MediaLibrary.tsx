@@ -2,6 +2,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import UploadZipModal from '../components/UploadZipModal';
+import { type ExtractResult } from '../../lib/zipHandler';
 
 interface MediaItem {
   id: string;
@@ -20,6 +22,8 @@ export default function MediaLibrary() {
   const [currentPath, setCurrentPath] = useState('root');
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [showZipModal, setShowZipModal] = useState(false);
+  const [zipUploading, setZipUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -97,6 +101,156 @@ export default function MediaLibrary() {
       alert('Error uploading: ' + error.message);
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Función para crear la estructura de carpetas en BD antes de subir los archivos del ZIP
+  const createFolderStructure = async (folderPaths: string[]): Promise<void> => {
+    if (!user) return;
+
+    for (const folderPath of folderPaths) {
+      const parts = folderPath.split('/');
+      const folderName = parts[parts.length - 1]; // Last part is the folder name
+      const parentPath = parts.slice(0, -1).join('/') || currentPath; // Parent path, default to currentPath
+
+      // Only create if parent path equals currentPath or a valid parent
+      // This ensures we create in the right hierarchy
+      if (parentPath === currentPath || parts.length - 1 === 0) {
+        try {
+          await supabase.from('media').insert({
+            user_id: user.id,
+            name: folderName,
+            mimetype: 'folder',
+            path: parentPath === currentPath ? currentPath : currentPath + (currentPath === 'root' ? '' : '/') + parentPath,
+            url: '',
+            size: 0
+          });
+        } catch (error: any) {
+          // Ignorar si ya existe
+          if (!error.message.includes('duplicate')) {
+            console.error('Error creating folder:', error);
+          }
+        }
+      }
+    }
+
+    // Second pass: create all the nested folders
+    const createdPaths = new Set([currentPath]);
+    for (const folderPath of folderPaths.sort()) {
+      const parts = folderPath.split('/');
+      
+      // Create each intermediate folder
+      for (let i = 1; i <= parts.length; i++) {
+        const currentFolder = parts.slice(0, i).join('/');
+        const folderName = parts[i - 1];
+        
+        if (!createdPaths.has(currentFolder)) {
+          const parentFolderPath = i === 1 
+            ? currentPath 
+            : currentPath === 'root' 
+              ? parts.slice(0, i - 1).join('/') 
+              : currentPath + '/' + parts.slice(0, i - 1).join('/');
+
+          try {
+            await supabase.from('media').insert({
+              user_id: user.id,
+              name: folderName,
+              mimetype: 'folder',
+              path: parentFolderPath,
+              url: '',
+              size: 0
+            });
+            createdPaths.add(currentFolder);
+          } catch (error: any) {
+            // Ignorar si ya existe
+            if (!error.message.includes('duplicate')) {
+              console.error('Error creating folder:', error);
+            }
+          }
+        }
+      }
+    }
+  };
+
+  // Función para manejar la carga de ZIP
+  const handleZipUpload = async (extractResult: ExtractResult) => {
+    if (!user) return;
+
+    try {
+      setZipUploading(true);
+      const { extractFolderStructure } = await import('../../lib/zipHandler');
+
+      // Paso 1: Crear estructura de carpetas
+      const folderPaths = extractFolderStructure(extractResult.files);
+      if (folderPaths.length > 0) {
+        await createFolderStructure(folderPaths);
+      }
+
+      // Paso 2: Subir todos los archivos preservando la estructura
+      for (let i = 0; i < extractResult.files.length; i++) {
+        const { path, file } = extractResult.files[i];
+
+        // Construir el path en R2: user_id/folder1/subfolder2/filename.ext
+        const fileExt = file.name.split('.').pop();
+        const randomId = Math.random().toString(36).substring(2);
+        const fileName = `${randomId}_${Date.now()}.${fileExt}`;
+        
+        // Replace original filename with random one, preserving directory structure
+        const dirPath = path.substring(0, path.lastIndexOf('/'));
+        const r2Path = `${user.id}/${dirPath}/${fileName}`;
+
+        // 1. Get presigned URL
+        const presignRes = await fetch('/api/media/presign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: r2Path, contentType: file.type })
+        });
+
+        if (!presignRes.ok) throw new Error('Failed to get upload URL');
+        const { url, publicUrl } = await presignRes.json();
+
+        // 2. Upload to R2
+        const uploadRes = await fetch(url, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type },
+          body: file
+        });
+
+        if (!uploadRes.ok) throw new Error('Failed to upload to storage');
+
+        // 3. Determine the folder path in DB
+        // If extracting from root of ZIP structure, use currentPath
+        // Otherwise build relative to currentPath
+        let mediaFolderPath: string;
+        if (dirPath) {
+          mediaFolderPath = currentPath === 'root' 
+            ? dirPath 
+            : currentPath + '/' + dirPath;
+        } else {
+          mediaFolderPath = currentPath;
+        }
+
+        // 4. Save to database
+        const { error: dbError } = await supabase.from('media').insert({
+          user_id: user.id,
+          name: file.name,
+          url: publicUrl,
+          mimetype: file.type,
+          size: file.size,
+          path: mediaFolderPath
+        });
+
+        if (dbError) throw dbError;
+      }
+
+      setShowZipModal(false);
+      fetchMedia();
+      alert(`✅ Carpeta cargada exitosamente con ${extractResult.fileCount} archivos`);
+    } catch (error: any) {
+      alert('Error cargando ZIP: ' + error.message);
+      console.error(error);
+    } finally {
+      setZipUploading(false);
     }
   };
 
@@ -180,9 +334,17 @@ export default function MediaLibrary() {
              <span className="text-sm">Nueva Carpeta</span>
           </button>
           <button 
+            onClick={() => setShowZipModal(true)}
+            disabled={uploading || zipUploading}
+            className="px-6 py-3 bg-white text-slate-700 border border-slate-200 font-bold rounded-2xl hover:bg-slate-50 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+             <span className="material-symbols-outlined text-[20px]">folder_zip</span>
+             <span className="text-sm">Subir Carpeta (ZIP)</span>
+          </button>
+          <button 
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="px-6 py-3 bg-primary text-white font-bold rounded-2xl hover:translate-y-[-1px] transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
+            disabled={uploading || zipUploading}
+            className="px-6 py-3 bg-primary text-white font-bold rounded-2xl hover:translate-y-[-1px] transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-50"
           >
             <span className="material-symbols-outlined text-[20px]">cloud_upload</span>
             <span className="text-sm">{uploading ? 'Subiendo...' : 'Subir Medios'}</span>
@@ -284,6 +446,14 @@ export default function MediaLibrary() {
            </div>
         </div>
       )}
+
+      {/* ZIP Modal */}
+      <UploadZipModal 
+        isOpen={showZipModal}
+        onClose={() => setShowZipModal(false)}
+        onConfirm={handleZipUpload}
+        uploading={zipUploading}
+      />
     </motion.div>
   );
 }

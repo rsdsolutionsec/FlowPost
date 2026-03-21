@@ -266,8 +266,7 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
               const fileName = (parts.pop() || '').toLowerCase();
               const hasFolder = parts.length > 0;
               if (hasFolder) {
-                let expectedPath = parts.join('/');
-                if (!expectedPath.startsWith('root')) expectedPath = `root/${expectedPath}`;
+                const expectedPath = parts.join('/');
                 imageUrl = mediaByExactPath.get(`${expectedPath}/${fileName}`.toLowerCase()) || mediaByName.get(fileName) || '';
               } else imageUrl = mediaByName.get(fileName) || '';
             }
@@ -730,17 +729,28 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
                 <>
                   <button
                     onClick={onClose}
-                    className="flex-1 py-4 bg-white text-slate-700 border border-slate-200 font-black rounded-2xl hover:bg-slate-50 transition-all"
+                    className="py-4 px-5 bg-white text-slate-700 border border-slate-200 font-black rounded-2xl hover:bg-slate-50 transition-all"
                   >
                     Cancelar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedDestinations([]);
+                      handleImport();
+                    }}
+                    disabled={preview.length === 0 || loading}
+                    className="flex-1 py-4 bg-slate-800 text-white font-black rounded-2xl hover:bg-slate-900 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">library_books</span>
+                    <span className="text-sm">Solo a Librería</span>
                   </button>
                   <button
                     onClick={() => setStep(2)}
                     disabled={preview.length === 0}
                     className="flex-1 py-4 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
-                    <span>Continuar</span>
-                    <span className="material-symbols-outlined">arrow_forward</span>
+                    <span className="material-symbols-outlined text-[18px]">calendar_add_on</span>
+                    <span className="text-sm">+ Programar</span>
                   </button>
                 </>
               )}

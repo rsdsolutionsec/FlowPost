@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import CreatePostModal from '../components/CreatePostModal';
+import ImportCopyModal from '../components/ImportCopyModal';
 
 interface Copy {
   id: string;
@@ -39,7 +40,7 @@ export default function CopyLibrary() {
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('copy_library')
+        .from('copies')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
@@ -67,7 +68,7 @@ export default function CopyLibrary() {
   const handleDelete = async (id: string) => {
     if (!confirm('¿Estás seguro de eliminar este copy?')) return;
     try {
-      const { error } = await supabase.from('copy_library').delete().eq('id', id);
+      const { error } = await supabase.from('copies').delete().eq('id', id);
       if (error) throw error;
       setCopies(copies.filter(c => c.id !== id));
     } catch (error: any) {
@@ -243,7 +244,6 @@ export default function CopyLibrary() {
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
         onSuccess={() => { fetchCopies(); setShowImportModal(false); }}
-        campaigns={campaigns}
       />
 
       <CreatePostModal 
@@ -284,11 +284,11 @@ function CreateCopyModal({ isOpen, onClose, onSuccess, campaigns, editData }: an
     e.preventDefault();
     try {
       if (editData) {
-        const { error } = await supabase.from('copy_library')
+        const { error } = await supabase.from('copies')
           .update(formData).eq('id', editData.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('copy_library')
+        const { error } = await supabase.from('copies')
           .insert([{ ...formData, user_id: user?.id, status: 'draft' }]);
         if (error) throw error;
       }
@@ -323,87 +323,6 @@ function CreateCopyModal({ isOpen, onClose, onSuccess, campaigns, editData }: an
                {editData? 'Guardar Cambios' : 'Crear Copy'}
             </button>
           </form>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function ImportCopyModal({ isOpen, onClose, onSuccess, campaigns }: any) {
-  const { user } = useAuth();
-  const [fileContent, setFileContent] = useState('');
-  const [formData, setFormData] = useState({
-    campaign_id: '',
-    category: 'Importado'
-  });
-  const [loading, setLoading] = useState(false);
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (re) => setFileContent(re.target?.result as string);
-      reader.readAsText(file);
-    }
-  };
-
-  const handleImport = async () => {
-    if (!fileContent || !user) return;
-    setLoading(true);
-    try {
-      const blocks = fileContent.split(/\n\s*\n/).filter(b => b.trim());
-      const inserts = blocks.map((block, index) => ({
-        user_id: user.id,
-        name: `Importado ${new Date().toLocaleDateString()} - ${index + 1}`,
-        content: block.trim(),
-        category: formData.category,
-        campaign_id: formData.campaign_id || null,
-        status: 'draft'
-      }));
-
-      const { error } = await supabase.from('copy_library').insert(inserts);
-      if (error) throw error;
-      onSuccess();
-    } catch (error: any) { alert(error.message); }
-    finally { setLoading(false); }
-  };
-
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={onClose} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
-      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl overflow-hidden">
-        <div className="p-8 sm:p-10">
-          <h3 className="text-2xl font-black text-slate-900 mb-2">Importar Copys</h3>
-          <p className="text-slate-500 text-sm mb-6">Sube un archivo .txt con tus copys separados por una línea en blanco.</p>
-          
-          <div className="space-y-6">
-            <div className="space-y-2">
-               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Archivo TXT</label>
-               <input type="file" accept=".txt" onChange={handleFileUpload} className="w-full text-xs font-bold" />
-            </div>
-            
-            <div className="space-y-2">
-               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Categoría</label>
-               <input value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-sm font-bold" />
-            </div>
-
-            <div className="space-y-2">
-               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Asignar a Campaña</label>
-               <select value={formData.campaign_id} onChange={e => setFormData({...formData, campaign_id: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-sm font-bold">
-                  <option value="">Ninguna</option>
-                  {campaigns.map((c:any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-               </select>
-            </div>
-
-            <button 
-              disabled={!fileContent || loading}
-              onClick={handleImport}
-              className="w-full py-4 bg-slate-900 text-white font-black uppercase tracking-widest rounded-2xl shadow-xl hover:translate-y-[-1px] transition-all disabled:opacity-50"
-            >
-               {loading ? 'Subiendo...' : 'Iniciar Importación'}
-            </button>
-          </div>
         </div>
       </motion.div>
     </div>

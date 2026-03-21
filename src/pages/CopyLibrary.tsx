@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import CreatePostModal from '../components/CreatePostModal';
+import ImportCopyModal from '../components/ImportCopyModal';
 
 interface Copy {
   id: string;
@@ -33,13 +34,16 @@ export default function CopyLibrary() {
   // Filtering
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  
+  // Bulk delete
+  const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
 
   const fetchCopies = async () => {
     if (!user) return;
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('copy_library')
+        .from('copies')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
@@ -67,11 +71,47 @@ export default function CopyLibrary() {
   const handleDelete = async (id: string) => {
     if (!confirm('¿Estás seguro de eliminar este copy?')) return;
     try {
-      const { error } = await supabase.from('copy_library').delete().eq('id', id);
+      const { error } = await supabase.from('copies').delete().eq('id', id);
       if (error) throw error;
       setCopies(copies.filter(c => c.id !== id));
     } catch (error: any) {
       alert('Error: ' + error.message);
+    }
+  };
+
+  const toggleSelectCopy = (id: string) => {
+    const newSelected = new Set(selectedForDelete);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedForDelete(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedForDelete.size === filteredCopies.length) {
+      setSelectedForDelete(new Set());
+    } else {
+      setSelectedForDelete(new Set(filteredCopies.map(c => c.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedForDelete.size === 0) return;
+    
+    const count = selectedForDelete.size;
+    if (!confirm(`¿Estás seguro de eliminar ${count} copy${count > 1 ? 's' : ''}? Esta acción no se puede deshacer.`)) return;
+    
+    try {
+      const idsArray = Array.from(selectedForDelete);
+      const { error } = await supabase.from('copies').delete().in('id', idsArray);
+      if (error) throw error;
+      
+      setCopies(copies.filter(c => !selectedForDelete.has(c.id)));
+      setSelectedForDelete(new Set());
+    } catch (error: any) {
+      alert('Error al eliminar: ' + error.message);
     }
   };
 
@@ -148,6 +188,37 @@ export default function CopyLibrary() {
          </div>
       </div>
 
+      {/* Bulk Delete Toolbar */}
+      {selectedForDelete.size > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          className="mb-6 p-4 bg-rose-50 border-2 border-rose-200 rounded-2xl flex items-center justify-between"
+        >
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-black text-rose-700">
+              {selectedForDelete.size} copy{selectedForDelete.size > 1 ? 's' : ''} seleccionado{selectedForDelete.size > 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setSelectedForDelete(new Set())}
+              className="px-4 py-2 bg-white text-slate-700 border border-rose-200 font-bold rounded-xl hover:bg-slate-50 transition-all text-sm"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              className="px-4 py-2 bg-rose-600 text-white font-bold rounded-xl hover:bg-rose-700 transition-all text-sm flex items-center gap-2"
+            >
+              <span className="material-symbols-outlined text-[18px]">delete</span>
+              <span>Eliminar</span>
+            </button>
+          </div>
+        </motion.div>
+      )}
+
       {loading ? (
         <div className="py-20 flex justify-center">
            <div className="w-10 h-10 border-4 border-primary/10 border-t-primary rounded-full animate-spin" />
@@ -167,67 +238,112 @@ export default function CopyLibrary() {
            </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
-           {filteredCopies.map((copy) => (
-             <motion.div 
-               layout
-               key={copy.id}
-               className="group bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl hover:border-primary/10 transition-all overflow-hidden flex flex-col"
-             >
-                <div className="p-6 sm:p-8 flex-1">
-                  <div className="flex items-start justify-between mb-6">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${
-                           copy.status === 'active' ? 'bg-emerald-500' : 
-                           copy.status === 'published' ? 'bg-primary' : 'bg-slate-300'
-                        }`} />
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{copy.category}</span>
-                      </div>
-                      <h4 className="font-bold text-slate-900 line-clamp-1 group-hover:text-primary transition-colors">{copy.name}</h4>
-                    </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                       <button 
-                        onClick={() => { setSelectedCopy(copy); setShowCreateModal(true); }}
-                        className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 hover:text-primary transition-all"
-                       >
-                         <span className="material-symbols-outlined text-[18px]">edit</span>
-                       </button>
-                       <button 
-                         onClick={() => handleDelete(copy.id)}
-                         className="p-2 hover:bg-rose-50 rounded-xl text-slate-400 hover:text-rose-500 transition-all"
-                       >
-                         <span className="material-symbols-outlined text-[18px]">delete</span>
-                       </button>
-                    </div>
-                  </div>
-                  
-                  <div className="relative">
-                    <p className="text-slate-600 text-sm leading-relaxed line-clamp-4 font-medium italic">
-                      "{copy.content}"
-                    </p>
-                    <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-white to-transparent" />
-                  </div>
-                </div>
+        <>
+          {/* Select All Button */}
+          <div className="mb-6 flex items-center gap-3">
+            <label className="flex items-center gap-3 px-4 py-3 bg-slate-100 rounded-2xl cursor-pointer hover:bg-slate-200 transition-all">
+              <input 
+                type="checkbox"
+                checked={selectedForDelete.size > 0 && selectedForDelete.size === filteredCopies.length}
+                onChange={toggleSelectAll}
+                className="w-5 h-5 rounded text-slate-900 cursor-pointer"
+              />
+              <span className="text-sm font-bold text-slate-700">
+                Seleccionar todos ({filteredCopies.length})
+              </span>
+            </label>
+          </div>
 
-                <div className="px-6 sm:px-8 py-5 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between mt-auto">
-                   <div className="flex items-center gap-2 text-slate-400">
-                      <span className="material-symbols-outlined text-[16px]">history</span>
-                      <span className="text-[10px] font-bold">
-                        {copy.last_used_at ? `Usado ${new Date(copy.last_used_at).toLocaleDateString()}` : 'Nunca usado'}
-                      </span>
-                   </div>
-                   <button 
-                    onClick={() => { setSelectedCopy(copy); setShowScheduleModal(true); }}
-                    className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary hover:gap-3 transition-all"
-                   >
-                     Programar
-                     <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                   </button>
-                </div>
-             </motion.div>
-           ))}
-        </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+             {filteredCopies.map((copy) => (
+               <motion.div 
+                 layout
+                 key={copy.id}
+                 className={`group bg-white rounded-[2rem] sm:rounded-[2.5rem] border-2 shadow-sm hover:shadow-xl transition-all overflow-hidden flex flex-col cursor-pointer ${
+                   selectedForDelete.has(copy.id)
+                     ? 'border-slate-900 bg-slate-50'
+                     : 'border-slate-100 hover:border-primary/10'
+                 }`}
+                 onClick={() => toggleSelectCopy(copy.id)}
+               >
+                  <div className="p-6 sm:p-8 flex-1">
+                    <div className="flex items-start justify-between mb-6">
+                      <div className="flex-1">
+                        {/* Checkbox */}
+                        <div className="flex items-center gap-3 mb-4">
+                          <input 
+                            type="checkbox"
+                            checked={selectedForDelete.has(copy.id)}
+                            onChange={() => {}}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-5 h-5 rounded text-slate-900 cursor-pointer"
+                          />
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`w-2 h-2 rounded-full ${
+                                 copy.status === 'active' ? 'bg-emerald-500' : 
+                                 copy.status === 'published' ? 'bg-primary' : 'bg-slate-300'
+                              }`} />
+                              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{copy.category}</span>
+                            </div>
+                            <h4 className="font-bold text-slate-900 line-clamp-1 group-hover:text-primary transition-colors">{copy.name}</h4>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                         <button 
+                          onClick={(e) => { 
+                            e.stopPropagation();
+                            setSelectedCopy(copy); 
+                            setShowCreateModal(true); 
+                          }}
+                          className="p-2 hover:bg-slate-50 rounded-xl text-slate-400 hover:text-primary transition-all"
+                         >
+                           <span className="material-symbols-outlined text-[18px]">edit</span>
+                         </button>
+                         <button 
+                           onClick={(e) => {
+                             e.stopPropagation();
+                             handleDelete(copy.id);
+                           }}
+                           className="p-2 hover:bg-rose-50 rounded-xl text-slate-400 hover:text-rose-500 transition-all"
+                         >
+                           <span className="material-symbols-outlined text-[18px]">delete</span>
+                         </button>
+                      </div>
+                    </div>
+                    
+                    <div className="relative">
+                      <p className="text-slate-600 text-sm leading-relaxed line-clamp-4 font-medium italic">
+                        "{copy.content}"
+                      </p>
+                      <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-white to-transparent" />
+                    </div>
+                  </div>
+
+                  <div className="px-6 sm:px-8 py-5 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between mt-auto">
+                     <div className="flex items-center gap-2 text-slate-400">
+                        <span className="material-symbols-outlined text-[16px]">history</span>
+                        <span className="text-[10px] font-bold">
+                          {copy.last_used_at ? `Usado ${new Date(copy.last_used_at).toLocaleDateString()}` : 'Nunca usado'}
+                        </span>
+                     </div>
+                     <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedCopy(copy); 
+                        setShowScheduleModal(true);
+                      }}
+                      className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary hover:gap-3 transition-all"
+                     >
+                       Programar
+                       <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                     </button>
+                  </div>
+               </motion.div>
+             ))}
+          </div>
+        </>
       )}
 
       {/* Modals */}
@@ -243,7 +359,6 @@ export default function CopyLibrary() {
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
         onSuccess={() => { fetchCopies(); setShowImportModal(false); }}
-        campaigns={campaigns}
       />
 
       <CreatePostModal 
@@ -284,11 +399,11 @@ function CreateCopyModal({ isOpen, onClose, onSuccess, campaigns, editData }: an
     e.preventDefault();
     try {
       if (editData) {
-        const { error } = await supabase.from('copy_library')
+        const { error } = await supabase.from('copies')
           .update(formData).eq('id', editData.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('copy_library')
+        const { error } = await supabase.from('copies')
           .insert([{ ...formData, user_id: user?.id, status: 'draft' }]);
         if (error) throw error;
       }
@@ -329,83 +444,4 @@ function CreateCopyModal({ isOpen, onClose, onSuccess, campaigns, editData }: an
   );
 }
 
-function ImportCopyModal({ isOpen, onClose, onSuccess, campaigns }: any) {
-  const { user } = useAuth();
-  const [fileContent, setFileContent] = useState('');
-  const [formData, setFormData] = useState({
-    campaign_id: '',
-    category: 'Importado'
-  });
-  const [loading, setLoading] = useState(false);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (re) => setFileContent(re.target?.result as string);
-      reader.readAsText(file);
-    }
-  };
-
-  const handleImport = async () => {
-    if (!fileContent || !user) return;
-    setLoading(true);
-    try {
-      const blocks = fileContent.split(/\n\s*\n/).filter(b => b.trim());
-      const inserts = blocks.map((block, index) => ({
-        user_id: user.id,
-        name: `Importado ${new Date().toLocaleDateString()} - ${index + 1}`,
-        content: block.trim(),
-        category: formData.category,
-        campaign_id: formData.campaign_id || null,
-        status: 'draft'
-      }));
-
-      const { error } = await supabase.from('copy_library').insert(inserts);
-      if (error) throw error;
-      onSuccess();
-    } catch (error: any) { alert(error.message); }
-    finally { setLoading(false); }
-  };
-
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={onClose} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
-      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl overflow-hidden">
-        <div className="p-8 sm:p-10">
-          <h3 className="text-2xl font-black text-slate-900 mb-2">Importar Copys</h3>
-          <p className="text-slate-500 text-sm mb-6">Sube un archivo .txt con tus copys separados por una línea en blanco.</p>
-          
-          <div className="space-y-6">
-            <div className="space-y-2">
-               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Archivo TXT</label>
-               <input type="file" accept=".txt" onChange={handleFileUpload} className="w-full text-xs font-bold" />
-            </div>
-            
-            <div className="space-y-2">
-               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Categoría</label>
-               <input value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-sm font-bold" />
-            </div>
-
-            <div className="space-y-2">
-               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Asignar a Campaña</label>
-               <select value={formData.campaign_id} onChange={e => setFormData({...formData, campaign_id: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-primary/20 text-sm font-bold">
-                  <option value="">Ninguna</option>
-                  {campaigns.map((c:any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-               </select>
-            </div>
-
-            <button 
-              disabled={!fileContent || loading}
-              onClick={handleImport}
-              className="w-full py-4 bg-slate-900 text-white font-black uppercase tracking-widest rounded-2xl shadow-xl hover:translate-y-[-1px] transition-all disabled:opacity-50"
-            >
-               {loading ? 'Subiendo...' : 'Iniciar Importación'}
-            </button>
-          </div>
-        </div>
-      </motion.div>
-    </div>
-  );
-}

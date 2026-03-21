@@ -70,7 +70,7 @@ export default function Dashboard() {
     >
       <div className="mb-10 sm:mb-14">
         <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-on-surface font-headline leading-tight">
-          ¡Hola, {user?.name?.split(' ')[0] || 'Robin'}!
+          ¡Hola, {user?.user_metadata?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'Robin'}!
         </h2>
         <p className="text-slate-500 mt-3 font-medium text-sm sm:text-lg">Aquí tienes un resumen de tu actividad de hoy.</p>
       </div>
@@ -119,7 +119,7 @@ export default function Dashboard() {
                  </div>
                  <div className="flex-1 min-w-0">
                     <p className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">{post.platform}</p>
-                    <p className="font-bold text-slate-800 text-sm truncate">{post.caption.substring(0, 30)}...</p>
+                    <p className="font-bold text-slate-800 text-sm truncate">{(post.caption || '').substring(0, 30)}...</p>
                     <p className="text-[10px] text-slate-400 mt-1 font-medium italic">
                       {new Date(post.scheduled_at).toLocaleDateString()}
                     </p>

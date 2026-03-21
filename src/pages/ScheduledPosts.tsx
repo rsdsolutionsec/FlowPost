@@ -235,7 +235,7 @@ export default function ScheduledPosts() {
         prefill={editingPost ? {
           editId: editingPost.id,
           caption: editingPost.caption,
-          mediaUrl: post.image_path,
+          mediaUrl: editingPost.image_path,
           platform: editingPost.platform,
           status: editingPost.status,
           facebookPageId: editingPost.facebook_page_id,

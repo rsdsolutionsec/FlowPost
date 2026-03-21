@@ -173,7 +173,7 @@ export async function fetchFacebookPageInsights(
 ): Promise<AccountInsightDay[]> {
   const sinceUnix = Math.floor(since.getTime() / 1000);
   const untilUnix = Math.floor(until.getTime() / 1000);
-  const metrics = 'page_impressions,page_impressions_unique,page_engaged_users,page_fans';
+  const metrics = 'page_impressions,page_impressions_unique,page_engaged_users';
 
   const url = `${META_GRAPH_BASE}/${pageId}/insights?metric=${metrics}&period=day&since=${sinceUnix}&until=${untilUnix}&access_token=${accessToken}`;
   const response = await fetch(url);
@@ -205,9 +205,6 @@ export async function fetchFacebookPageInsights(
           break;
         case 'page_engaged_users':
           day.engagement = val.value ?? 0;
-          break;
-        case 'page_fans':
-          day.followers = val.value ?? 0;
           break;
       }
     }

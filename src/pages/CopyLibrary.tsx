@@ -208,8 +208,7 @@ export default function CopyLibrary() {
             const fileName = rawFileName.toLowerCase();
             const hasFolder = parts.length > 0;
             if (hasFolder) {
-              let expectedPath = parts.join('/');
-              if (!expectedPath.startsWith('root')) expectedPath = `root/${expectedPath}`;
+              const expectedPath = parts.join('/');
               const exactKey = `${expectedPath}/${fileName}`.toLowerCase();
               imageUrl = mediaByExactPath.get(exactKey) || mediaByName.get(fileName) || '';
             } else {

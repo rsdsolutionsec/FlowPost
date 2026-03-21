@@ -197,18 +197,19 @@ export default function MediaLibrary() {
       for (let i = 0; i < extractResult.files.length; i++) {
         const { path, file } = extractResult.files[i];
 
-        // Construir el path en R2: user_id/folder1/subfolder2/filename.ext
-        // Usar el nombre original del archivo (file.name ya es solo el basename desde zipHandler)
+        // Construir el path en R2 SIN userId: folder1/subfolder2/filename.ext
+        // Las rutas del TXT (media_path) referencian directamente el path sin userId
+        // Ejemplo: "netlife/750Mbps/1.png" debe coincidir con la URL pública
         const fileName = file.name;
 
         // Get the directory path (everything except the filename)
         const lastSlashIndex = path.lastIndexOf('/');
         const dirPath = lastSlashIndex >= 0 ? path.substring(0, lastSlashIndex) : '';
 
-        // Build R2 path, avoiding double slashes
+        // Build R2 path WITHOUT userId prefix so URL matches media_path in TXT files
         const r2Path = dirPath
-          ? `${user.id}/${dirPath}/${fileName}`
-          : `${user.id}/${fileName}`;
+          ? `${dirPath}/${fileName}`
+          : fileName;
 
         // Determine correct MIME type from extension
         const { getMimeTypeFromExtension } = await import('../../lib/zipHandler');

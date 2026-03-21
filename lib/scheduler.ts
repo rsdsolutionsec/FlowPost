@@ -85,10 +85,6 @@ export async function processScheduledPosts() {
         ? (post.copies as any).content
         : (post.custom_caption || post.caption || '');
 
-      if (!resolvedCaption.trim()) {
-        throw new Error('El post no tiene un copy o caption asignado.');
-      }
-
       if (!post.image_path) {
         throw new Error('El post no tiene una ruta de medio (image_path/media)');
       }

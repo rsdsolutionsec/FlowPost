@@ -290,6 +290,109 @@ export default function MediaLibrary() {
     }
   };
 
+  // Función para eliminar carpeta y todos sus archivos
+  const deleteFolder = async (folder: MediaItem) => {
+    const message = `¿Eliminar la carpeta "${folder.name}" y TODOS sus archivos?\n\nEsta acción no se puede deshacer.`;
+    if (!confirm(message)) return;
+
+    try {
+      // 1. Obtener todos los archivos dentro de esta carpeta y subcarpetas
+      const { data: allItems, error: fetchError } = await supabase
+        .from('media')
+        .select('*')
+        .eq('user_id', user?.id)
+        .ilike('path', `${folder.name}%`);
+
+      if (fetchError) throw fetchError;
+
+      // 2. Eliminar archivos de R2 (solo los que tengan URL)
+      if (allItems && allItems.length > 0) {
+        for (const item of allItems) {
+          if (item.url && item.mimetype !== 'folder') {
+            const filename = item.url.split('/').pop();
+            await fetch('/api/media/delete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ filename: `${user?.id}/${filename}` })
+            }).catch(() => {}); // Ignorar errores en eliminación individual
+          }
+        }
+      }
+
+      // 3. Eliminar la carpeta y todos sus contenidos de BD
+      const { error: deleteError } = await supabase
+        .from('media')
+        .delete()
+        .eq('id', folder.id)
+        .or(`path.ilike.${folder.name}%`);
+
+      if (deleteError) throw deleteError;
+
+      fetchMedia();
+      alert(`Carpeta "${folder.name}" y su contenido eliminado exitosamente.`);
+    } catch (error: any) {
+      alert('Error eliminando carpeta: ' + error.message);
+    }
+  };
+
+  // Función para renombrar carpeta
+  const renameFolder = async (folder: MediaItem) => {
+    const newName = prompt(`Renombrar carpeta:\n\nNombre actual: ${folder.name}`, folder.name);
+    if (!newName || newName === folder.name || !user) return;
+
+    try {
+      // 1. Validar que el nuevo nombre no exista en el mismo nivel
+      const { data: existing } = await supabase
+        .from('media')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('path', folder.path)
+        .eq('name', newName)
+        .eq('mimetype', 'folder');
+
+      if (existing && existing.length > 0) {
+        alert('Ya existe una carpeta con ese nombre en esta ubicación.');
+        return;
+      }
+
+      // 2. Obtener todos los archivos dentro de esta carpeta (incluyendo subcarpetas)
+      const { data: allItems, error: fetchError } = await supabase
+        .from('media')
+        .select('*')
+        .eq('user_id', user.id)
+        .or(`id.eq.${folder.id},path.ilike.${folder.name}%`);
+
+      if (fetchError) throw fetchError;
+
+      // 3. Actualizar la carpeta raíz
+      const { error: updateError } = await supabase
+        .from('media')
+        .update({ name: newName })
+        .eq('id', folder.id);
+
+      if (updateError) throw updateError;
+
+      // 4. Actualizar el path de todos los archivos/carpetas dentro
+      if (allItems) {
+        for (const item of allItems) {
+          if (item.path && item.path.startsWith(folder.name)) {
+            const newPath = item.path.replace(new RegExp(`^${folder.name}`), newName);
+            await supabase
+              .from('media')
+              .update({ path: newPath })
+              .eq('id', item.id)
+              .catch(() => {});
+          }
+        }
+      }
+
+      fetchMedia();
+      alert(`Carpeta renombrada a "${newName}" exitosamente.`);
+    } catch (error: any) {
+      alert('Error renombrando carpeta: ' + error.message);
+    }
+  };
+
   const createFolder = async () => {
     const name = prompt('Nombre de la carpeta:');
     if (!name || !user) return;
@@ -432,6 +535,8 @@ export default function MediaLibrary() {
                   key={item.id} 
                   item={item} 
                   onDelete={() => deleteItem(item)}
+                  onFolderDelete={() => deleteFolder(item)}
+                  onFolderRename={() => renameFolder(item)}
                   onClick={() => {
                     if (item.mimetype === 'folder') {
                        setCurrentPath(item.name);
@@ -470,7 +575,7 @@ export default function MediaLibrary() {
   );
 }
 
-function MediaCard({ item, onDelete, onClick }: { item: MediaItem, onDelete: () => void, onClick: () => void }) {
+function MediaCard({ item, onDelete, onFolderDelete, onFolderRename, onClick }: { item: MediaItem, onDelete: () => void, onFolderDelete?: () => void, onFolderRename?: () => void, onClick: () => void }) {
   const isVideo = item.mimetype.startsWith('video/');
   const isFolder = item.mimetype === 'folder';
 
@@ -486,6 +591,26 @@ function MediaCard({ item, onDelete, onClick }: { item: MediaItem, onDelete: () 
           <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-900 px-4 text-center truncate w-full">
             {item.name}
           </p>
+          
+          {/* Carpeta Overlay Actions */}
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={(e) => { e.stopPropagation(); onFolderRename?.(); }}
+                className="bg-blue-500/80 backdrop-blur-md hover:bg-blue-600 text-white p-3 rounded-xl transition-all shadow-lg"
+                title="Renombrar carpeta"
+              >
+                <span className="material-symbols-outlined text-lg">edit</span>
+              </button>
+              <button 
+                onClick={(e) => { e.stopPropagation(); onFolderDelete?.(); }}
+                className="bg-rose-500/80 backdrop-blur-md hover:bg-rose-600 text-white p-3 rounded-xl transition-all shadow-lg"
+                title="Eliminar carpeta y contenido"
+              >
+                <span className="material-symbols-outlined text-lg">delete</span>
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
         <>

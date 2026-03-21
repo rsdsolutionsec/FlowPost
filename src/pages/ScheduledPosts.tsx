@@ -3,6 +3,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import CreatePostModal from '../components/CreatePostModal';
+import PostInsightsBadge from '../components/analytics/PostInsightsBadge';
+
+interface PostInsight {
+  impressions: number;
+  reach: number;
+  engagement: number;
+}
 
 interface Post {
   id: string;
@@ -15,6 +22,7 @@ interface Post {
   instagram_account_id?: string;
   facebook_pages?: { page_name: string };
   instagram_accounts?: { username: string };
+  post_insights?: PostInsight[];
 }
 
 interface FacebookPage {
@@ -75,7 +83,8 @@ export default function ScheduledPosts() {
         .select(`
           *,
           facebook_pages(page_name),
-          instagram_accounts(username)
+          instagram_accounts(username),
+          post_insights(impressions, reach, engagement)
         `)
         .eq('user_id', user?.id)
         .order('scheduled_at', { ascending: true });
@@ -445,9 +454,19 @@ function PostCard({ post, onDelete, onEdit, onApprove, isSelected, onSelect }: {
            </div>
         </div>
 
-        <p className="text-slate-600 text-sm font-medium leading-relaxed italic line-clamp-3 mb-6">
+        <p className="text-slate-600 text-sm font-medium leading-relaxed italic line-clamp-3 mb-2">
           "{post.caption}"
         </p>
+
+        {post.status === 'published' && post.post_insights?.[0] && (
+          <PostInsightsBadge
+            impressions={post.post_insights[0].impressions}
+            reach={post.post_insights[0].reach}
+            engagement={post.post_insights[0].engagement}
+          />
+        )}
+
+        <div className="mb-4" />
 
         {post.status === 'pending' && (
           <button

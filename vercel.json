@@ -13,6 +13,21 @@
   "functions": {
     "api/publish.ts": {
       "includeFiles": "lib/**"
+    },
+    "api/insights/sync.ts": {
+      "includeFiles": "lib/**"
+    },
+    "api/insights/post.ts": {
+      "includeFiles": "lib/**"
+    },
+    "api/insights/account.ts": {
+      "includeFiles": "lib/**"
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/insights/sync?secret=${CRON_SECRET}",
+      "schedule": "0 */6 * * *"
+    }
+  ]
 }

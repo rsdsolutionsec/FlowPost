@@ -32,6 +32,12 @@ export default function Accounts() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [newAccount, setNewAccount] = useState({ token: '', id: '', name: '', facebook_page_ref: '' });
 
+  // Edit token state
+  const [editingPageId, setEditingPageId] = useState<string | null>(null);
+  const [editToken, setEditToken] = useState('');
+  const [editTokenVisible, setEditTokenVisible] = useState(false);
+  const [savingToken, setSavingToken] = useState(false);
+
   const fetchData = async () => {
     if (!user) return;
     setLoading(true);
@@ -148,8 +154,40 @@ export default function Accounts() {
     }
   };
 
+  const handleUpdateToken = async (pageId: string) => {
+    if (!editToken.trim()) return;
+    setSavingToken(true);
+    try {
+      const { error } = await supabase
+        .from('facebook_pages')
+        .update({ page_access_token: editToken.trim() })
+        .eq('id', pageId);
+      if (error) throw error;
+      setEditingPageId(null);
+      setEditToken('');
+      setEditTokenVisible(false);
+      fetchData();
+    } catch (error: any) {
+      alert('Error al actualizar token: ' + error.message);
+    } finally {
+      setSavingToken(false);
+    }
+  };
+
+  const startEditToken = (page: FacebookPage) => {
+    setEditingPageId(page.id);
+    setEditToken('');
+    setEditTokenVisible(false);
+  };
+
+  const cancelEditToken = () => {
+    setEditingPageId(null);
+    setEditToken('');
+    setEditTokenVisible(false);
+  };
+
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       className="p-8"
@@ -204,13 +242,76 @@ export default function Accounts() {
                       <h3 className="font-bold text-lg text-slate-800 truncate">{page.page_name}</h3>
                       <p className="text-xs text-slate-400 font-mono tracking-tighter truncate">ID: {page.page_id}</p>
                     </div>
-                    <button 
-                      onClick={() => handleDelete(page.id, 'facebook')}
-                      className="p-2 text-rose-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
-                    >
-                      <span className="material-symbols-outlined">delete_forever</span>
-                    </button>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => startEditToken(page)}
+                        className="p-2 text-blue-400 hover:text-blue-600 transition-colors"
+                        title="Actualizar Token"
+                      >
+                        <span className="material-symbols-outlined">key</span>
+                      </button>
+                      <button
+                        onClick={() => handleDelete(page.id, 'facebook')}
+                        className="p-2 text-rose-300 hover:text-rose-500 transition-colors"
+                      >
+                        <span className="material-symbols-outlined">delete_forever</span>
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Inline token editor */}
+                  <AnimatePresence>
+                    {editingPageId === page.id && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden mb-4"
+                      >
+                        <div className="p-4 bg-blue-50/50 rounded-2xl space-y-3">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-blue-600">Actualizar Access Token</p>
+                          <p className="text-[10px] text-slate-500 leading-relaxed">
+                            Pega tu nuevo token. Las publicaciones programadas usarán este token automáticamente.
+                          </p>
+                          <div className="relative">
+                            <input
+                              type={editTokenVisible ? 'text' : 'password'}
+                              value={editToken}
+                              onChange={e => setEditToken(e.target.value)}
+                              placeholder="Nuevo token (EAA...)"
+                              className="w-full p-3 pr-10 bg-white rounded-xl border border-blue-100 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-300 text-sm transition-all"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setEditTokenVisible(!editTokenVisible)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">
+                                {editTokenVisible ? 'visibility_off' : 'visibility'}
+                              </span>
+                            </button>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleUpdateToken(page.id)}
+                              disabled={!editToken.trim() || savingToken}
+                              className="flex-1 py-2.5 bg-blue-600 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-blue-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">save</span>
+                              {savingToken ? 'Guardando...' : 'Guardar'}
+                            </button>
+                            <button
+                              onClick={cancelEditToken}
+                              className="px-4 py-2.5 bg-white text-slate-600 text-xs font-black uppercase tracking-widest rounded-xl border border-slate-200 hover:bg-slate-50 transition-all"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                   <div className="flex items-center justify-between pt-4 border-t border-slate-50">
                     <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full ${page.is_active ? 'bg-emerald-500' : 'bg-slate-300'}`} />
@@ -218,14 +319,23 @@ export default function Accounts() {
                         {page.is_active ? 'Activo' : 'Inactivo'}
                       </span>
                     </div>
-                    <button 
-                      onClick={() => toggleStatus(page.id, page.is_active, 'facebook')}
-                      className={`text-xs font-black px-4 py-2 rounded-full transition-colors ${
-                        page.is_active ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
-                      }`}
-                    >
-                      {page.is_active ? 'Pausar' : 'Activar'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => startEditToken(page)}
+                        className="text-xs font-black px-3 py-2 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors flex items-center gap-1"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">key</span>
+                        Token
+                      </button>
+                      <button
+                        onClick={() => toggleStatus(page.id, page.is_active, 'facebook')}
+                        className={`text-xs font-black px-4 py-2 rounded-full transition-colors ${
+                          page.is_active ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                        }`}
+                      >
+                        {page.is_active ? 'Pausar' : 'Activar'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))

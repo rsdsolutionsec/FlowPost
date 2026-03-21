@@ -27,6 +27,7 @@ export default function Dashboard() {
     monthly_impact: 0
   });
   const [recentPosts, setRecentPosts] = useState<RecentPost[]>([]);
+  const [reachText, setReachText] = useState('Sincroniza para ver datos');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -38,21 +39,29 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      // Fetch Stats
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const [scheduledRes, publishedRes, recentRes] = await Promise.all([
+      // First of current month
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+      const [scheduledRes, publishedRes, recentRes, insightsRes] = await Promise.all([
         supabase.from('posts').select('id', { count: 'exact' }).eq('user_id', user?.id).eq('status', 'scheduled'),
         supabase.from('posts').select('id', { count: 'exact' }).eq('user_id', user?.id).eq('status', 'published').gte('scheduled_at', today.toISOString()),
-        supabase.from('posts').select('*').eq('user_id', user?.id).order('scheduled_at', { ascending: false }).limit(4)
+        supabase.from('posts').select('*').eq('user_id', user?.id).order('scheduled_at', { ascending: false }).limit(4),
+        supabase.from('post_insights').select('impressions, reach').eq('user_id', user?.id),
       ]);
+
+      const totalImpressions = (insightsRes.data || []).reduce((s, p) => s + (p.impressions || 0), 0);
+      const totalReach = (insightsRes.data || []).reduce((s, p) => s + (p.reach || 0), 0);
 
       setStats({
         scheduled_posts: scheduledRes.count || 0,
         published_today: publishedRes.count || 0,
-        monthly_impact: (publishedRes.count || 0) * 12 // Simulated impact
+        monthly_impact: totalImpressions
       });
+
+      setReachText(totalReach > 0 ? `${totalReach >= 1000 ? (totalReach / 1000).toFixed(1) + 'k' : totalReach} alcance total` : 'Sincroniza para ver datos');
 
       setRecentPosts(recentRes.data || []);
     } catch (error) {
@@ -91,10 +100,10 @@ export default function Dashboard() {
           color="bg-emerald-500 text-white"
         />
         <StatCard 
-          label="Impacto Mensual" 
-          value={stats.monthly_impact.toString()} 
-          icon="trending_up" 
-          trend="8.5k alcance est."
+          label="Impresiones"
+          value={stats.monthly_impact >= 1000 ? (stats.monthly_impact / 1000).toFixed(1) + 'k' : stats.monthly_impact.toString()}
+          icon="trending_up"
+          trend={reachText}
           color="bg-amber-500 text-white"
         />
       </div>

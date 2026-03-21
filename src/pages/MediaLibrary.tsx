@@ -236,6 +236,9 @@ export default function MediaLibrary() {
 
         if (!uploadRes.ok) throw new Error('Failed to upload to storage');
 
+        // Update progress
+        setZipProgress(Math.round(((i + 1) / extractResult.files.length) * 100));
+
         // 3. Determine the folder path in DB
         // If extracting from root of ZIP structure, use currentPath
         // Otherwise build relative to currentPath

@@ -159,7 +159,7 @@ export default function CopyLibrary() {
 
   const handleSendAll = async () => {
     if (!user) return;
-    const unsentCopies = copies.filter(c => !copyStatuses.has(c.id));
+    const unsentCopies = copies.filter(c => copyStatuses.get(c.id) !== 'active');
     if (unsentCopies.length === 0) {
       alert('Todos los copys ya han sido enviados a programados.');
       return;
@@ -298,7 +298,7 @@ export default function CopyLibrary() {
           <p className="text-slate-500 mt-2 font-medium text-sm sm:text-base">Tu repositorio central de textos persuasivos y creativos.</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          {copies.filter(c => !copyStatuses.has(c.id)).length > 0 && (
+          {copies.filter(c => copyStatuses.get(c.id) !== 'active').length > 0 && (
             <button
               onClick={() => setIsSendAllModalOpen(true)}
               disabled={sendingAll}
@@ -312,9 +312,9 @@ export default function CopyLibrary() {
               ) : (
                 <>
                   <span className="material-symbols-outlined text-[20px]">send</span>
-                  <span className="text-sm">Enviar todos</span>
+                  <span className="text-sm">Programar todos</span>
                   <span className="ml-1 bg-white/20 text-white text-xs font-black px-2 py-0.5 rounded-full">
-                    {copies.filter(c => !copyStatuses.has(c.id)).length}
+                    {copies.filter(c => copyStatuses.get(c.id) !== 'active').length}
                   </span>
                 </>
               )}
@@ -577,7 +577,7 @@ export default function CopyLibrary() {
                 <div className="flex justify-between items-start">
                   <div className="space-y-1">
                     <h3 className="text-2xl font-black text-slate-900">Destinos de Envío</h3>
-                    <p className="text-slate-500 text-sm">¿A qué cuentas quieres enviar los {copies.filter(c => !copyStatuses.has(c.id)).length} copys no programados?</p>
+                    <p className="text-slate-500 text-sm">¿A qué cuentas quieres programar los {copies.filter(c => copyStatuses.get(c.id) !== 'active').length} copys disponibles?</p>
                   </div>
                   <button onClick={() => setIsSendAllModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                     <span className="material-symbols-outlined text-slate-400">close</span>

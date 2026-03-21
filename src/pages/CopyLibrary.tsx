@@ -226,7 +226,7 @@ export default function CopyLibrary() {
           user_id: user.id,
           copy_id: copy.id,
           caption: null,
-          custom_caption: null,
+          custom_caption: copy.content,
           image_path: imageUrl,
           scheduled_at: scheduledAt,
           status: 'pending',

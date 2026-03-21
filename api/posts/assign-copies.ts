@@ -19,7 +19,7 @@ export default async function handler(
     // 1. Fetch all available copies for user
     const { data: copies, error: copiesError } = await supabaseAdmin
       .from('copies')
-      .select('id')
+      .select('id, content')
       .eq('user_id', userId)
       .order('created_at', { ascending: true });
 
@@ -63,10 +63,9 @@ export default async function handler(
       
       const { error } = await supabaseAdmin
         .from('posts')
-        .update({ 
+        .update({
           copy_id: assignedCopy.id,
-          // We nullify custom_caption/caption when applying a copy bulk
-          custom_caption: null,
+          custom_caption: (assignedCopy as any).content,
           caption: null
         })
         .eq('id', post.id);

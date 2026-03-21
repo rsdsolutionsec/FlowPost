@@ -55,14 +55,16 @@ export default function AssignCopies() {
 
   const handleManualAssign = async (postId: string, copyId: string) => {
     try {
+      const selectedCopy = copies.find(c => c.id === copyId);
+      const copyContent = selectedCopy?.content || null;
       const { error } = await supabase
         .from('posts')
-        .update({ copy_id: copyId || null, custom_caption: null, caption: null })
+        .update({ copy_id: copyId || null, custom_caption: copyContent, caption: null })
         .eq('id', postId);
 
       if (error) throw error;
-      
-      setPosts(posts.map(p => p.id === postId ? { ...p, copy_id: copyId || null, custom_caption: null, caption: null } : p));
+
+      setPosts(posts.map(p => p.id === postId ? { ...p, copy_id: copyId || null, custom_caption: copyContent, caption: null } : p));
       showToast('Copy asignado correctamente');
     } catch (error) {
       alert('Error updating copy');

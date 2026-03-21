@@ -280,7 +280,7 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
             if (type === 'fb' && (copyPlatform === 'facebook' || copyPlatform === 'both')) {
               const account = pages.find(p => p.id === destId);
               if (account) {
-                postsToInsert.push({ user_id: user.id, copy_id: copy.id, image_path: imageUrl, scheduled_at: scheduledAt, status: 'pending', platform: 'facebook', facebook_page_id: destId, instagram_account_id: null });
+                postsToInsert.push({ user_id: user.id, copy_id: copy.id, custom_caption: copy.content, image_path: imageUrl, scheduled_at: scheduledAt, status: 'pending', platform: 'facebook', facebook_page_id: destId, instagram_account_id: null });
                 createdPostsList.push({
                   accountType: 'facebook',
                   accountId: destId,
@@ -294,7 +294,7 @@ export default function ImportCopyModal({ isOpen, onClose, onSuccess }: ImportCo
             } else if (type === 'ig' && (copyPlatform === 'instagram' || copyPlatform === 'both')) {
               const account = igAccounts.find(ig => ig.id === destId);
               if (account) {
-                postsToInsert.push({ user_id: user.id, copy_id: copy.id, image_path: imageUrl, scheduled_at: scheduledAt, status: 'pending', platform: 'instagram', facebook_page_id: null, instagram_account_id: destId });
+                postsToInsert.push({ user_id: user.id, copy_id: copy.id, custom_caption: copy.content, image_path: imageUrl, scheduled_at: scheduledAt, status: 'pending', platform: 'instagram', facebook_page_id: null, instagram_account_id: destId });
                 createdPostsList.push({
                   accountType: 'instagram',
                   accountId: destId,

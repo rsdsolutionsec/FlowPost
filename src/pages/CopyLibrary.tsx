@@ -14,6 +14,9 @@ interface Copy {
   created_at: string;
   campaign_id: string;
   last_used_at?: string;
+  suggested_at?: string;
+  media_path?: string;
+  platform?: string;
 }
 
 interface Campaign {
@@ -38,18 +41,46 @@ export default function CopyLibrary() {
   // Bulk delete
   const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
 
+  // Send All
+  const [copyStatuses, setCopyStatuses] = useState<Map<string, 'active' | 'published'>>(new Map());
+  const [sendingAll, setSendingAll] = useState(false);
+  const [sendAllResult, setSendAllResult] = useState<{ sent: number; skipped: number } | null>(null);
+  const [isSendAllModalOpen, setIsSendAllModalOpen] = useState(false);
+  const [availablePages, setAvailablePages] = useState<any[]>([]);
+  const [availableIgAccounts, setAvailableIgAccounts] = useState<any[]>([]);
+  const [selectedDestinations, setSelectedDestinations] = useState<string[]>([]);
+
   const fetchCopies = async () => {
     if (!user) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('copies')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      setCopies(data || []);
+      const [copiesRes, postsRes] = await Promise.all([
+        supabase
+          .from('copies')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('posts')
+          .select('copy_id, status')
+          .eq('user_id', user.id)
+          .not('copy_id', 'is', null)
+      ]);
+
+      if (copiesRes.error) throw copiesRes.error;
+      setCopies(copiesRes.data || []);
+
+      if (postsRes.data) {
+        const statusMap = new Map<string, 'active' | 'published'>();
+        postsRes.data.forEach((p: { copy_id: string; status: string }) => {
+          if (['pending', 'scheduled', 'processing'].includes(p.status)) {
+            statusMap.set(p.copy_id, 'active');
+          } else if (p.status === 'published' && statusMap.get(p.copy_id) !== 'active') {
+            statusMap.set(p.copy_id, 'published');
+          }
+        });
+        setCopyStatuses(statusMap);
+      }
     } catch (error: any) {
       console.error('Error fetching copies:', error.message);
     } finally {
@@ -66,6 +97,17 @@ export default function CopyLibrary() {
   useEffect(() => {
     fetchCopies();
     fetchCampaigns();
+    if (user) {
+      const fetchAccounts = async () => {
+        const [pagesRes, igRes] = await Promise.all([
+          supabase.from('facebook_pages').select('id, page_name').eq('user_id', user.id).eq('is_active', true),
+          supabase.from('instagram_accounts').select('id, username').eq('user_id', user.id).eq('is_active', true)
+        ]);
+        if (pagesRes.data) setAvailablePages(pagesRes.data);
+        if (igRes.data) setAvailableIgAccounts(igRes.data);
+      };
+      fetchAccounts();
+    }
   }, [user]);
 
   const handleDelete = async (id: string) => {
@@ -115,6 +157,119 @@ export default function CopyLibrary() {
     }
   };
 
+  const handleSendAll = async () => {
+    if (!user) return;
+    const unsentCopies = copies.filter(c => !copyStatuses.has(c.id));
+    if (unsentCopies.length === 0) {
+      alert('Todos los copys ya han sido enviados a programados.');
+      return;
+    }
+    if (selectedDestinations.length === 0) {
+      alert('Por favor selecciona al menos un destino.');
+      return;
+    }
+
+    setSendingAll(true);
+    setSendAllResult(null);
+    setIsSendAllModalOpen(false);
+
+    try {
+      const fbDestinations = selectedDestinations.filter(d => d.startsWith('fb:')).map(d => d.split(':')[1]);
+      const igDestinations = selectedDestinations.filter(d => d.startsWith('ig:')).map(d => d.split(':')[1]);
+
+      // Pre-fetch all media to resolve filenames
+      const { data: allMedia } = await supabase
+        .from('media')
+        .select('name, url, path')
+        .eq('user_id', user.id);
+
+      const mediaByExactPath = new Map<string, string>();
+      const mediaByName = new Map<string, string>();
+      interface MediaRow { name: string; url: string; path: string; }
+
+      ((allMedia as MediaRow[]) || []).forEach((m) => {
+        const lowerName = m.name.toLowerCase();
+        mediaByName.set(lowerName, m.url);
+        if (m.path) {
+          mediaByExactPath.set(`${m.path}/${lowerName}`.toLowerCase(), m.url);
+        }
+      });
+
+      const postsToInsert: any[] = [];
+
+      for (const copy of unsentCopies) {
+        let imageUrl = '';
+        if (copy.media_path) {
+          if (copy.media_path.startsWith('http')) {
+            imageUrl = copy.media_path;
+          } else {
+            const parts = copy.media_path.split('/');
+            const rawFileName = parts.pop() || '';
+            const fileName = rawFileName.toLowerCase();
+            const hasFolder = parts.length > 0;
+            if (hasFolder) {
+              let expectedPath = parts.join('/');
+              if (!expectedPath.startsWith('root')) expectedPath = `root/${expectedPath}`;
+              const exactKey = `${expectedPath}/${fileName}`.toLowerCase();
+              imageUrl = mediaByExactPath.get(exactKey) || mediaByName.get(fileName) || '';
+            } else {
+              imageUrl = mediaByName.get(fileName) || '';
+            }
+          }
+        }
+
+        const scheduledAt = copy.suggested_at
+          ? new Date(copy.suggested_at).toISOString()
+          : new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+        const platform = copy.platform || 'facebook';
+        const base = {
+          user_id: user.id,
+          copy_id: copy.id,
+          caption: null,
+          custom_caption: null,
+          image_path: imageUrl,
+          scheduled_at: scheduledAt,
+          status: 'pending',
+        };
+
+        let addedAny = false;
+        if (platform === 'facebook' || platform === 'both') {
+          fbDestinations.forEach(pageId => {
+            postsToInsert.push({ ...base, platform: 'facebook', facebook_page_id: pageId, instagram_account_id: null });
+            addedAny = true;
+          });
+        }
+        if (platform === 'instagram' || platform === 'both') {
+          igDestinations.forEach(igId => {
+            postsToInsert.push({ ...base, platform: 'instagram', facebook_page_id: null, instagram_account_id: igId });
+            addedAny = true;
+          });
+        }
+        if (!addedAny && fbDestinations.length > 0) {
+          postsToInsert.push({ ...base, platform: 'facebook', facebook_page_id: fbDestinations[0], instagram_account_id: null });
+        }
+      }
+
+      if (postsToInsert.length === 0) {
+        alert('No hay cuentas conectadas para publicar. Conecta Facebook o Instagram en Configuración.');
+        return;
+      }
+
+      const { error } = await supabase.from('posts').insert(postsToInsert);
+      if (error) throw error;
+
+      const newStatuses = new Map(copyStatuses);
+      unsentCopies.forEach(c => newStatuses.set(c.id, 'active'));
+      setCopyStatuses(newStatuses);
+      setSendAllResult({ sent: unsentCopies.length, skipped: copies.length - unsentCopies.length });
+    } catch (error: any) {
+      alert('Error al enviar: ' + error.message);
+    } finally {
+      setSendingAll(false);
+    }
+  };
+
   const filteredCopies = copies.filter(copy => {
     const matchesSearch = copy.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                          copy.content.toLowerCase().includes(searchQuery.toLowerCase());
@@ -143,14 +298,36 @@ export default function CopyLibrary() {
           <p className="text-slate-500 mt-2 font-medium text-sm sm:text-base">Tu repositorio central de textos persuasivos y creativos.</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-          <button 
+          {copies.filter(c => !copyStatuses.has(c.id)).length > 0 && (
+            <button
+              onClick={() => setIsSendAllModalOpen(true)}
+              disabled={sendingAll}
+              className="px-6 py-3 bg-amber-500 text-white font-bold rounded-2xl hover:bg-amber-600 transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 disabled:opacity-60"
+            >
+              {sendingAll ? (
+                <>
+                  <span className="material-symbols-outlined text-[20px] animate-spin">progress_activity</span>
+                  <span className="text-sm">Enviando...</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[20px]">send</span>
+                  <span className="text-sm">Enviar todos</span>
+                  <span className="ml-1 bg-white/20 text-white text-xs font-black px-2 py-0.5 rounded-full">
+                    {copies.filter(c => !copyStatuses.has(c.id)).length}
+                  </span>
+                </>
+              )}
+            </button>
+          )}
+          <button
             onClick={() => setShowImportModal(true)}
             className="px-6 py-3 bg-white text-slate-700 border border-slate-200 font-bold rounded-2xl hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
           >
              <span className="material-symbols-outlined text-[20px]">upload_file</span>
              <span className="text-sm">Importar TXT</span>
           </button>
-          <button 
+          <button
             onClick={() => setShowCreateModal(true)}
             className="px-6 py-3 bg-primary text-white font-bold rounded-2xl hover:translate-y-[-1px] transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
           >
@@ -280,11 +457,19 @@ export default function CopyLibrary() {
                           />
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
-                              <span className={`w-2 h-2 rounded-full ${
-                                 copy.status === 'active' ? 'bg-emerald-500' : 
-                                 copy.status === 'published' ? 'bg-primary' : 'bg-slate-300'
-                              }`} />
-                              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{copy.category}</span>
+                              {copyStatuses.get(copy.id) === 'active' ? (
+                                <div className="flex items-center gap-1 px-2 py-0.5 bg-amber-50 border border-amber-200 rounded-full">
+                                  <span className="material-symbols-outlined text-[10px] text-amber-500">pending_actions</span>
+                                  <span className="text-[9px] font-black text-amber-600 uppercase tracking-wider">Programado</span>
+                                </div>
+                              ) : copyStatuses.get(copy.id) === 'published' ? (
+                                <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full">
+                                  <span className="material-symbols-outlined text-[10px] text-emerald-500">check_circle</span>
+                                  <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Publicado</span>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{copy.category}</span>
+                              )}
                             </div>
                             <h4 className="font-bold text-slate-900 line-clamp-1 group-hover:text-primary transition-colors">{copy.name}</h4>
                           </div>
@@ -346,8 +531,131 @@ export default function CopyLibrary() {
         </>
       )}
 
+      {/* Send All Result Toast */}
+      <AnimatePresence>
+        {sendAllResult && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="mb-6 flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl"
+          >
+            <span className="material-symbols-outlined text-emerald-500">check_circle</span>
+            <div>
+              <p className="text-sm font-black text-emerald-700">
+                ¡{sendAllResult.sent} copy{sendAllResult.sent === 1 ? '' : 's'} enviado{sendAllResult.sent === 1 ? '' : 's'} a Programados!
+              </p>
+              {sendAllResult.skipped > 0 && (
+                <p className="text-xs text-emerald-500 font-medium">{sendAllResult.skipped} ya estaban programados y fueron omitidos.</p>
+              )}
+            </div>
+            <button onClick={() => setSendAllResult(null)} className="ml-auto text-emerald-400 hover:text-emerald-600">
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Send All Destinations Modal */}
+      <AnimatePresence>
+        {isSendAllModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSendAllModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl overflow-hidden"
+            >
+              <div className="p-8 sm:p-10 space-y-8">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-1">
+                    <h3 className="text-2xl font-black text-slate-900">Destinos de Envío</h3>
+                    <p className="text-slate-500 text-sm">¿A qué cuentas quieres enviar los {copies.filter(c => !copyStatuses.has(c.id)).length} copys no programados?</p>
+                  </div>
+                  <button onClick={() => setIsSendAllModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                    <span className="material-symbols-outlined text-slate-400">close</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {availablePages.map(p => (
+                    <label key={`fb:${p.id}`} className={`flex items-center gap-3 p-4 bg-white border rounded-2xl cursor-pointer hover:border-blue-300 transition-all ${selectedDestinations.includes(`fb:${p.id}`) ? 'border-blue-400 bg-blue-50/30' : 'border-slate-100'}`}>
+                      <input
+                        type="checkbox"
+                        checked={selectedDestinations.includes(`fb:${p.id}`)}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedDestinations([...selectedDestinations, `fb:${p.id}`]);
+                          else setSelectedDestinations(selectedDestinations.filter(id => id !== `fb:${p.id}`));
+                        }}
+                        className="w-5 h-5 rounded text-blue-600"
+                      />
+                      <div className="flex flex-col min-w-0">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-900 text-sm truncate">
+                          <span className="material-symbols-outlined text-[18px] text-blue-500 shrink-0">thumb_up</span>
+                          <span className="truncate">{p.page_name}</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Facebook Page</span>
+                      </div>
+                    </label>
+                  ))}
+                  {availableIgAccounts.map(ig => (
+                    <label key={`ig:${ig.id}`} className={`flex items-center gap-3 p-4 bg-white border rounded-2xl cursor-pointer hover:border-rose-300 transition-all ${selectedDestinations.includes(`ig:${ig.id}`) ? 'border-rose-400 bg-rose-50/30' : 'border-slate-100'}`}>
+                      <input
+                        type="checkbox"
+                        checked={selectedDestinations.includes(`ig:${ig.id}`)}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedDestinations([...selectedDestinations, `ig:${ig.id}`]);
+                          else setSelectedDestinations(selectedDestinations.filter(id => id !== `ig:${ig.id}`));
+                        }}
+                        className="w-5 h-5 rounded text-rose-500"
+                      />
+                      <div className="flex flex-col min-w-0">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-900 text-sm truncate">
+                          <span className="material-symbols-outlined text-[18px] text-rose-500 shrink-0">photo_camera</span>
+                          <span className="truncate">@{ig.username}</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Instagram Account</span>
+                      </div>
+                    </label>
+                  ))}
+                  {availablePages.length === 0 && availableIgAccounts.length === 0 && (
+                    <div className="col-span-2 p-8 text-center bg-rose-50/50 rounded-3xl border border-rose-100">
+                      <p className="text-sm font-bold text-rose-500">No hay cuentas conectadas disponibles.</p>
+                      <p className="text-xs text-rose-400 mt-1">Conecta una cuenta en Configuración primero.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setIsSendAllModalOpen(false)}
+                    className="flex-1 py-4 bg-slate-100 text-slate-600 font-bold text-sm rounded-2xl hover:bg-slate-200 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleSendAll}
+                    disabled={selectedDestinations.length === 0}
+                    className="flex-1 py-4 bg-slate-900 text-white font-bold text-sm rounded-2xl hover:bg-primary transition-all disabled:opacity-50"
+                  >
+                    Confirmar Envío
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Modals */}
-      <CreateCopyModal 
+      <CreateCopyModal
         isOpen={showCreateModal}
         onClose={() => { setShowCreateModal(false); setSelectedCopy(null); }}
         onSuccess={() => { fetchCopies(); setShowCreateModal(false); setSelectedCopy(null); }}

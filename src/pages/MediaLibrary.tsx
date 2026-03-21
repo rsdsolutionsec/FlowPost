@@ -198,16 +198,15 @@ export default function MediaLibrary() {
         const { path, file } = extractResult.files[i];
 
         // Construir el path en R2: user_id/folder1/subfolder2/filename.ext
-        const fileExt = file.name.split('.').pop() || '';
-        const randomId = Math.random().toString(36).substring(2);
-        const fileName = `${randomId}_${Date.now()}.${fileExt}`;
-        
+        // Usar el nombre original del archivo (file.name ya es solo el basename desde zipHandler)
+        const fileName = file.name;
+
         // Get the directory path (everything except the filename)
         const lastSlashIndex = path.lastIndexOf('/');
         const dirPath = lastSlashIndex >= 0 ? path.substring(0, lastSlashIndex) : '';
-        
+
         // Build R2 path, avoiding double slashes
-        const r2Path = dirPath 
+        const r2Path = dirPath
           ? `${user.id}/${dirPath}/${fileName}`
           : `${user.id}/${fileName}`;
 

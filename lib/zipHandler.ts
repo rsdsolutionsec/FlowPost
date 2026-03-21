@@ -123,7 +123,8 @@ export async function extractFilesFromZip(zipFile: File): Promise<ExtractResult>
 
       // Obtener el contenido del archivo
       const blob = await zipEntry.async('blob');
-      const file = new File([blob], zipEntry.name, { type: blob.type });
+      const baseName = filePath.split('/').pop() || filePath;
+      const file = new File([blob], baseName, { type: blob.type });
 
       // Validar tipo de archivo basado en extensión
       if (!isAllowedFile(filePath)) {

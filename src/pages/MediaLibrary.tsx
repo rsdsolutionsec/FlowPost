@@ -49,13 +49,13 @@ export default function MediaLibrary() {
       if (currentPath === 'root') {
         // Root: show files with null, empty, or 'root' path
         query = query.or(`path.is.null,path.eq.,path.eq.root`);
-      } else if (!currentPath.includes('/')) {
-        // First-level folder (e.g., 'campana1'): show both correct path AND legacy files without path
-        // This handles files that were saved without a path in the past
-        query = query.or(`path.eq.${currentPath},path.is.null,path.eq.`);
-      } else {
-        // Nested folder: exact path match only
+      } else if (currentPath.startsWith('root/')) {
+        // Path already has 'root/' prefix: exact match
         query = query.eq('path', currentPath);
+      } else {
+        // Path without 'root/' prefix: try both forms
+        // Some files were stored as 'root/campana_9', others as 'Netlife'
+        query = query.or(`path.eq.${currentPath},path.eq.root/${currentPath}`);
       }
 
       const { data, error } = await query
@@ -689,44 +689,23 @@ function MediaCard({ item, onDelete, onFolderDelete, onFolderRename, onClick, is
       style={{ cursor: 'pointer' }}
     >
       {isFolder ? (
-        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-slate-400 group-hover:bg-primary/5 transition-colors" onClick={(e) => {
-          // Para carpetas: si el click es en el checkbox o sus hijos, no lanzar el click del padre
-          const target = e.target as HTMLElement;
-          if (target.closest('[data-checkbox]')) {
-            e.stopPropagation();
-            return;
-          }
-        }}>
+        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-slate-400 group-hover:bg-primary/5 transition-colors">
           <span className="material-symbols-outlined text-5xl mb-2 group-hover:scale-110 transition-transform">folder</span>
           <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-slate-900 px-4 text-center truncate w-full">
             {item.name}
           </p>
           
-          {/* Checkbox Overlay */}
-          <div 
-            data-checkbox
-            onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
-            className={`absolute top-3 right-3 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all cursor-pointer ${
-              isSelected 
-                ? 'bg-primary border-primary' 
-                : 'bg-white/80 border-slate-300 group-hover:bg-white group-hover:border-primary'
-            }`}>
-            {isSelected && (
-              <span className="material-symbols-outlined text-sm text-white">check</span>
-            )}
-          </div>
-          
           {/* Carpeta Overlay Actions */}
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
             <div className="flex items-center gap-2">
-              <button 
+              <button
                 onClick={(e) => { e.stopPropagation(); onFolderRename?.(); }}
                 className="bg-blue-500/80 backdrop-blur-md hover:bg-blue-600 text-white p-3 rounded-xl transition-all shadow-lg"
                 title="Renombrar carpeta"
               >
                 <span className="material-symbols-outlined text-lg">edit</span>
               </button>
-              <button 
+              <button
                 onClick={(e) => { e.stopPropagation(); onFolderDelete?.(); }}
                 className="bg-rose-500/80 backdrop-blur-md hover:bg-rose-600 text-white p-3 rounded-xl transition-all shadow-lg"
                 title="Eliminar carpeta y contenido"
@@ -734,6 +713,20 @@ function MediaCard({ item, onDelete, onFolderDelete, onFolderRename, onClick, is
                 <span className="material-symbols-outlined text-lg">delete</span>
               </button>
             </div>
+          </div>
+
+          {/* Checkbox - after overlay so it renders on top */}
+          <div
+            data-checkbox
+            onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
+            className={`absolute top-3 right-3 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all z-10 cursor-pointer ${
+              isSelected
+                ? 'bg-primary border-primary'
+                : 'bg-white/80 border-slate-300 group-hover:bg-white group-hover:border-primary'
+            }`}>
+            {isSelected && (
+              <span className="material-symbols-outlined text-sm text-white">check</span>
+            )}
           </div>
         </div>
       ) : (

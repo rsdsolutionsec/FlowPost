@@ -57,10 +57,6 @@ export async function fetchFacebookPostInsights(
   const response = await fetch(url);
   const json = await response.json();
 
-  if (!response.ok || json.error) {
-    throw createMetaError(json);
-  }
-
   const result: FBPostInsight = {
     impressions: 0,
     reach: 0,
@@ -68,6 +64,12 @@ export async function fetchFacebookPostInsights(
     clicks: 0,
     reactions: {}
   };
+
+  if (!response.ok || json.error) {
+    // Code 100: post deleted, doesn't exist, or doesn't support insights — return zeros
+    if (json?.error?.code === 100) return result;
+    throw createMetaError(json);
+  }
 
   for (const entry of json.data || []) {
     const value = entry.values?.[0]?.value ?? 0;

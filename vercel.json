@@ -22,6 +22,9 @@
     },
     "api/insights/account.ts": {
       "includeFiles": "lib/**"
+    },
+    "api/insights/import-posts.ts": {
+      "includeFiles": "lib/**"
     }
   },
   "crons": [

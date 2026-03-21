@@ -142,7 +142,7 @@ export async function fetchInstagramMediaInsights(
 
   if (insightsRes.ok && !insightsJson.error) {
     for (const entry of insightsJson.data || []) {
-      const value = entry.values?.[0]?.value ?? 0;
+      const value = entry.values?.[0]?.value ?? entry.value ?? 0;
       switch (entry.name) {
         case 'reach':
           result.reach = value;

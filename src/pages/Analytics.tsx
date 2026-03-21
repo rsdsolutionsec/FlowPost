@@ -22,6 +22,7 @@ export default function Analytics() {
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [syncResult, setSyncResult] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
 
   // Post stats
@@ -153,6 +154,40 @@ export default function Analytics() {
     return Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
   }, [postInsights]);
 
+  async function handleImport() {
+    if (!user || importing) return;
+    setImporting(true);
+    setSyncResult(null);
+
+    try {
+      const results = await Promise.allSettled(
+        accounts.map(acc =>
+          fetch('/api/insights/import-posts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accountRefId: acc.id, platform: acc.platform, userId: user.id }),
+          }).then(r => r.json())
+        )
+      );
+
+      const totalImported = results.reduce((sum, r) => {
+        if (r.status === 'fulfilled') return sum + (r.value.imported || 0);
+        return sum;
+      }, 0);
+
+      if (totalImported > 0) {
+        setSyncResult({ type: 'success', message: `${totalImported} publicaciones históricas importadas. Sincroniza para ver sus métricas.` });
+        await fetchData();
+      } else {
+        setSyncResult({ type: 'warning', message: 'No hay publicaciones nuevas para importar (ya estaban todas).' });
+      }
+    } catch (err: any) {
+      setSyncResult({ type: 'error', message: `Error al importar: ${err.message}` });
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function handleSync() {
     if (!user || syncing) return;
     setSyncing(true);
@@ -258,8 +293,18 @@ export default function Analytics() {
           <AccountSelector accounts={accounts} value={selectedAccount} onChange={setSelectedAccount} />
           <DateRangeSelector value={days} onChange={setDays} />
           <button
+            onClick={handleImport}
+            disabled={importing || syncing}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-surface-container text-on-surface-variant text-xs font-black uppercase tracking-widest hover:bg-surface-container-high transition-all disabled:opacity-50"
+          >
+            <span className={`material-symbols-outlined text-[18px] ${importing ? 'animate-spin' : ''}`}>
+              download
+            </span>
+            {importing ? 'Importando...' : 'Importar historial'}
+          </button>
+          <button
             onClick={handleSync}
-            disabled={syncing}
+            disabled={syncing || importing}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-black uppercase tracking-widest hover:bg-primary/90 transition-all disabled:opacity-50"
           >
             <span className={`material-symbols-outlined text-[18px] ${syncing ? 'animate-spin' : ''}`}>

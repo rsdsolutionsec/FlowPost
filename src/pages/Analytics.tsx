@@ -22,6 +22,7 @@ export default function Analytics() {
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
 
   // Post stats
   const [postStats, setPostStats] = useState({ total: 0, published: 0, scheduled: 0, failed: 0 });
@@ -84,7 +85,8 @@ export default function Analytics() {
 
       if (selectedAccount !== 'all') {
         piQuery = piQuery.or(
-          `posts.facebook_page_id.eq.${selectedAccount},posts.instagram_account_id.eq.${selectedAccount}`
+          `facebook_page_id.eq.${selectedAccount},instagram_account_id.eq.${selectedAccount}`,
+          { referencedTable: 'posts' }
         );
       }
 
@@ -154,24 +156,38 @@ export default function Analytics() {
   async function handleSync() {
     if (!user || syncing) return;
     setSyncing(true);
+    setSyncResult(null);
+
+    let accountOk = 0, accountFail = 0, postOk = 0, postFail = 0;
+    const errors: string[] = [];
 
     try {
       // Sync all accounts
-      const syncPromises = accounts.map(acc =>
-        fetch('/api/insights/account', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            accountRefId: acc.id,
-            platform: acc.platform,
-            userId: user.id,
-            days,
-          }),
-        })
+      const accountResults = await Promise.allSettled(
+        accounts.map(acc =>
+          fetch('/api/insights/account', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              accountRefId: acc.id,
+              platform: acc.platform,
+              userId: user.id,
+              days,
+            }),
+          }).then(async r => {
+            const body = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(body.message || body.error || `HTTP ${r.status}`);
+            return body;
+          })
+        )
       );
-      await Promise.allSettled(syncPromises);
 
-      // Also sync post insights for published posts
+      for (const r of accountResults) {
+        if (r.status === 'fulfilled') accountOk++;
+        else { accountFail++; errors.push(r.reason?.message || 'Error de cuenta'); }
+      }
+
+      // Sync post insights for published posts
       const { data: publishedPosts } = await supabase
         .from('posts')
         .select('id')
@@ -181,20 +197,46 @@ export default function Analytics() {
         .limit(50);
 
       if (publishedPosts?.length) {
-        const postSyncPromises = publishedPosts.map(p =>
-          fetch('/api/insights/post', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ postId: p.id, userId: user.id }),
-          })
+        const postResults = await Promise.allSettled(
+          publishedPosts.map(p =>
+            fetch('/api/insights/post', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ postId: p.id, userId: user.id }),
+            }).then(async r => {
+              const body = await r.json().catch(() => ({}));
+              if (!r.ok) throw new Error(body.message || body.error || `HTTP ${r.status}`);
+              return body;
+            })
+          )
         );
-        await Promise.allSettled(postSyncPromises);
+
+        for (const r of postResults) {
+          if (r.status === 'fulfilled') postOk++;
+          else { postFail++; errors.push(r.reason?.message || 'Error de post'); }
+        }
       }
 
       // Refresh data
       await fetchData();
-    } catch (err) {
-      console.error('Sync error:', err);
+
+      // Show results
+      const totalOk = accountOk + postOk;
+      const totalFail = accountFail + postFail;
+
+      if (totalFail === 0 && totalOk > 0) {
+        setSyncResult({ type: 'success', message: `${postOk} posts y ${accountOk} cuentas sincronizados` });
+      } else if (totalOk > 0 && totalFail > 0) {
+        const uniqueErrors = [...new Set(errors)].slice(0, 2).join('. ');
+        setSyncResult({ type: 'warning', message: `${totalOk} sincronizados, ${totalFail} errores. ${uniqueErrors}` });
+      } else if (totalFail > 0) {
+        const uniqueErrors = [...new Set(errors)].slice(0, 2).join('. ');
+        setSyncResult({ type: 'error', message: `Error al sincronizar: ${uniqueErrors}` });
+      } else {
+        setSyncResult({ type: 'warning', message: 'No hay publicaciones para sincronizar' });
+      }
+    } catch (err: any) {
+      setSyncResult({ type: 'error', message: `Error: ${err.message}` });
     } finally {
       setSyncing(false);
     }
@@ -227,6 +269,22 @@ export default function Analytics() {
           </button>
         </div>
       </div>
+
+      {syncResult && (
+        <div className={`mb-4 px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2 ${
+          syncResult.type === 'success' ? 'bg-emerald-50 text-emerald-700' :
+          syncResult.type === 'warning' ? 'bg-amber-50 text-amber-700' :
+          'bg-rose-50 text-rose-700'
+        }`}>
+          <span className="material-symbols-outlined text-[18px]">
+            {syncResult.type === 'success' ? 'check_circle' : syncResult.type === 'warning' ? 'warning' : 'error'}
+          </span>
+          {syncResult.message}
+          <button onClick={() => setSyncResult(null)} className="ml-auto opacity-50 hover:opacity-100">
+            <span className="material-symbols-outlined text-[16px]">close</span>
+          </button>
+        </div>
+      )}
 
       <div className="space-y-6 sm:space-y-8">
         {/* Post status counts */}

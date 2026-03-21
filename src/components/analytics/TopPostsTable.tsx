@@ -40,14 +40,13 @@ export default function TopPostsTable({ userId, dateRange, accountId, loading }:
           posts!inner ( caption, image_path, platform, scheduled_at, facebook_page_id, instagram_account_id )
         `)
         .eq('user_id', userId)
-        .gte('fetched_at', dateRange.since.toISOString())
         .order('engagement', { ascending: false })
         .limit(10);
 
       if (accountId !== 'all') {
-        // Filter by account - check both FB and IG foreign keys
         query = query.or(
-          `posts.facebook_page_id.eq.${accountId},posts.instagram_account_id.eq.${accountId}`
+          `facebook_page_id.eq.${accountId},instagram_account_id.eq.${accountId}`,
+          { referencedTable: 'posts' }
         );
       }
 

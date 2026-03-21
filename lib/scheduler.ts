@@ -162,13 +162,13 @@ export async function processScheduledPosts() {
       if (result.success) {
         const platformKey = isInstagram ? 'ig_post_id' : 'fb_post_id';
         const platformTime = isInstagram ? 'ig_published_at' : 'fb_published_at';
-        
+
         const { error: updateError } = await supabaseAdmin
           .from('posts')
-          .update({ 
+          .update({
             status: 'published',
-            metadata: { 
-              [platformKey]: result.id,
+            metadata: {
+              [platformKey]: isInstagram ? result.id : (result.post_id || result.id),
               [platformTime]: new Date().toISOString(),
               platform: post.platform,
               media_type: mediaType

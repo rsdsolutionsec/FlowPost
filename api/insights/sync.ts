@@ -175,11 +175,13 @@ export default async function handler(request: any, response: any) {
           syncedPosts++;
         }
       } catch (err: any) {
+        const detail = err.code ? ` (code: ${err.code})` : '';
         if (isPermissionError(err)) {
-          errors.push(`Post ${post.id}: permiso insuficiente - ${err.message}`);
+          errors.push(`Post ${post.id}: permiso insuficiente - ${err.message}${detail}`);
         } else {
-          errors.push(`Post ${post.id}: ${err.message}`);
+          errors.push(`Post ${post.id}: ${err.message}${detail}`);
         }
+        console.error(`[Insights Sync] Error post ${post.id}:`, err.message, detail);
       }
     }
 

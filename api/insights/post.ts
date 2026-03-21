@@ -112,7 +112,7 @@ export default async function handler(request: any, response: any) {
         requires: ['read_insights', 'instagram_manage_insights'],
       });
     }
-    console.error('[Insights Post] Error:', err.message);
-    return response.status(500).json({ error: err.message });
+    console.error('[Insights Post] Error:', err.message, err.code ? `(code: ${err.code})` : '');
+    return response.status(500).json({ error: err.message, code: err.code });
   }
 }

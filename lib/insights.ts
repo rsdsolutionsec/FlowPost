@@ -100,21 +100,6 @@ export async function fetchInstagramMediaInsights(
   accessToken: string,
   mediaType?: string
 ): Promise<IGPostInsight> {
-  // REELS have different available metrics than IMAGE/CAROUSEL
-  const isReel = mediaType?.toUpperCase() === 'VIDEO' || mediaType?.toUpperCase() === 'REELS';
-
-  const metrics = isReel
-    ? ['impressions', 'reach', 'likes', 'comments', 'shares', 'saved'].join(',')
-    : ['impressions', 'reach', 'likes', 'comments', 'saved'].join(',');
-
-  const url = `${META_GRAPH_BASE}/${igPostId}/insights?metric=${metrics}&access_token=${accessToken}`;
-  const response = await fetch(url);
-  const json = await response.json();
-
-  if (!response.ok || json.error) {
-    throw createMetaError(json);
-  }
-
   const result: IGPostInsight = {
     impressions: 0,
     reach: 0,
@@ -125,29 +110,48 @@ export async function fetchInstagramMediaInsights(
     saves: 0
   };
 
-  for (const entry of json.data || []) {
-    const value = entry.values?.[0]?.value ?? 0;
-    switch (entry.name) {
-      case 'impressions':
-        result.impressions = value;
-        break;
-      case 'reach':
-        result.reach = value;
-        break;
-      case 'likes':
-        result.likes = value;
-        break;
-      case 'comments':
-        result.comments = value;
-        break;
-      case 'shares':
-        result.shares = value;
-        break;
-      case 'saved':
-        result.saves = value;
-        break;
+  // 1. Get like_count and comments_count as fields (guaranteed for all media types)
+  const fieldsUrl = `${META_GRAPH_BASE}/${igPostId}?fields=like_count,comments_count&access_token=${accessToken}`;
+  const fieldsRes = await fetch(fieldsUrl);
+  const fieldsJson = await fieldsRes.json();
+
+  if (!fieldsRes.ok || fieldsJson.error) {
+    throw createMetaError(fieldsJson);
+  }
+
+  result.likes = fieldsJson.like_count ?? 0;
+  result.comments = fieldsJson.comments_count ?? 0;
+
+  // 2. Get insight metrics (impressions, reach, saved are universal; shares for REELS)
+  const isReel = mediaType?.toUpperCase() === 'VIDEO' || mediaType?.toUpperCase() === 'REELS';
+  const insightMetrics = isReel
+    ? ['impressions', 'reach', 'saved', 'shares'].join(',')
+    : ['impressions', 'reach', 'saved'].join(',');
+
+  const insightsUrl = `${META_GRAPH_BASE}/${igPostId}/insights?metric=${insightMetrics}&access_token=${accessToken}`;
+  const insightsRes = await fetch(insightsUrl);
+  const insightsJson = await insightsRes.json();
+
+  if (insightsRes.ok && !insightsJson.error) {
+    for (const entry of insightsJson.data || []) {
+      const value = entry.values?.[0]?.value ?? 0;
+      switch (entry.name) {
+        case 'impressions':
+          result.impressions = value;
+          break;
+        case 'reach':
+          result.reach = value;
+          break;
+        case 'saved':
+          result.saves = value;
+          break;
+        case 'shares':
+          result.shares = value;
+          break;
+      }
     }
   }
+  // If insights fail (e.g. too recent), we still have likes/comments from fields
 
   result.engagement = result.likes + result.comments + result.shares + result.saves;
 
@@ -164,7 +168,7 @@ export async function fetchFacebookPageInsights(
 ): Promise<AccountInsightDay[]> {
   const sinceUnix = Math.floor(since.getTime() / 1000);
   const untilUnix = Math.floor(until.getTime() / 1000);
-  const metrics = 'page_impressions,page_engaged_users,page_fans';
+  const metrics = 'page_impressions,page_impressions_unique,page_engaged_users,page_fans';
 
   const url = `${META_GRAPH_BASE}/${pageId}/insights?metric=${metrics}&period=day&since=${sinceUnix}&until=${untilUnix}&access_token=${accessToken}`;
   const response = await fetch(url);
@@ -189,6 +193,9 @@ export async function fetchFacebookPageInsights(
       switch (entry.name) {
         case 'page_impressions':
           day.impressions = val.value ?? 0;
+          break;
+        case 'page_impressions_unique':
+          day.reach = val.value ?? 0;
           break;
         case 'page_engaged_users':
           day.engagement = val.value ?? 0;

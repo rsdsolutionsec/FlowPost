@@ -40,12 +40,19 @@ export default function MediaLibrary() {
   const fetchMedia = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('media')
         .select('*')
-        .eq('user_id', user?.id)
-        .eq('path', currentPath)
-        .order('created_at', { ascending: false });
+        .eq('user_id', user?.id);
+
+      // Filter by path - if root, include files with null, empty, or 'root' path
+      if (currentPath === 'root') {
+        query = query.or(`path.is.null,path.eq.,path.eq.root`);
+      } else {
+        query = query.eq('path', currentPath);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) throw error;
       setItems(data || []);

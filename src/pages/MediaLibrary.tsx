@@ -45,10 +45,16 @@ export default function MediaLibrary() {
         .select('*')
         .eq('user_id', user?.id);
 
-      // Filter by path - if root, include files with null, empty, or 'root' path
+      // Filter by path - handle different cases
       if (currentPath === 'root') {
+        // Root: show files with null, empty, or 'root' path
         query = query.or(`path.is.null,path.eq.,path.eq.root`);
+      } else if (!currentPath.includes('/')) {
+        // First-level folder (e.g., 'campana1'): show both correct path AND legacy files without path
+        // This handles files that were saved without a path in the past
+        query = query.or(`path.eq.${currentPath},path.is.null,path.eq.`);
       } else {
+        // Nested folder: exact path match only
         query = query.eq('path', currentPath);
       }
 

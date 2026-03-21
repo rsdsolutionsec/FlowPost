@@ -22,10 +22,8 @@ export default defineConfig(({mode}) => {
           manualChunks(id) {
             if (id.includes('node_modules')) {
               if (id.includes('recharts') || id.includes('d3-')) return 'charts';
-              if (id.includes('framer-motion')) return 'animations';
-              if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) return 'react-core';
+              if (id.includes('framer-motion') || id.includes('motion')) return 'animations';
               if (id.includes('@supabase')) return 'supabase';
-              return 'vendor';
             }
           }
         }

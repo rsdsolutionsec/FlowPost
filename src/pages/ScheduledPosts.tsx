@@ -124,6 +124,22 @@ export default function ScheduledPosts() {
     }
   };
 
+  const handleApproveAll = async () => {
+    const pendingPosts = posts.filter(p => p.status === 'pending');
+    if (pendingPosts.length === 0) return;
+    if (!confirm(`¿Aprobar todas las ${pendingPosts.length} publicaciones pendientes?`)) return;
+    try {
+      const { error } = await supabase
+        .from('posts')
+        .update({ status: 'scheduled' })
+        .in('id', pendingPosts.map(p => p.id));
+      if (error) throw error;
+      setPosts(posts.map(p => p.status === 'pending' ? { ...p, status: 'scheduled' as const } : p));
+    } catch (error: any) {
+      alert('Error: ' + error.message);
+    }
+  };
+
   const toggleSelectPost = (id: string) => {
     setSelectedPosts(prev => {
       const next = new Set(prev);
@@ -194,13 +210,27 @@ export default function ScheduledPosts() {
           </h2>
           <p className="text-slate-500 mt-2 font-medium text-sm sm:text-base">Visualiza y gestiona tu estrategia de contenido.</p>
         </div>
-        <button
-          onClick={() => { setEditingPost(null); setShowCreateModal(true); }}
-          className="w-full sm:w-auto px-6 py-3 bg-primary text-white font-bold rounded-2xl hover:translate-y-[-1px] transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
-        >
-          <span className="material-symbols-outlined text-[20px]">add</span>
-          <span className="text-sm">Programar Nuevo</span>
-        </button>
+        <div className="flex gap-3 w-full sm:w-auto">
+          {posts.some(p => p.status === 'pending') && (
+            <button
+              onClick={handleApproveAll}
+              className="flex-1 sm:flex-none px-6 py-3 bg-emerald-500 text-white font-bold rounded-2xl hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+            >
+              <span className="material-symbols-outlined text-[20px]">done_all</span>
+              <span className="text-sm">Aprobar Todo</span>
+              <span className="bg-white/20 text-white text-xs font-black px-2 py-0.5 rounded-full">
+                {posts.filter(p => p.status === 'pending').length}
+              </span>
+            </button>
+          )}
+          <button
+            onClick={() => { setEditingPost(null); setShowCreateModal(true); }}
+            className="flex-1 sm:flex-none px-6 py-3 bg-primary text-white font-bold rounded-2xl hover:translate-y-[-1px] transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
+          >
+            <span className="material-symbols-outlined text-[20px]">add</span>
+            <span className="text-sm">Programar Nuevo</span>
+          </button>
+        </div>
       </div>
 
       {/* Filters Toolbar */}

@@ -255,14 +255,11 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
         throw new Error('Debes seleccionar o subir una imagen/video');
       }
 
-      const postData = {
+      const basePostData = {
         user_id: user.id,
         caption: formData.caption,
         custom_caption: formData.caption,
         image_path: imageUrl,
-        platform: formData.platform,
-        facebook_page_id: formData.platform === 'facebook' || formData.platform === 'both' ? formData.facebook_page_id : null,
-        instagram_account_id: formData.platform === 'instagram' || formData.platform === 'both' ? formData.instagram_account_id : null,
         campaign_id: formData.campaign_id || null,
         copy_id: prefill?.copyId || null,
         scheduled_at: new Date(formData.scheduled_at).toISOString(),
@@ -272,13 +269,28 @@ export default function CreatePostModal({ isOpen, onClose, onSuccess, prefill }:
       if (prefill?.editId) {
         const { error } = await supabase
           .from('posts')
-          .update(postData)
+          .update({
+            ...basePostData,
+            platform: formData.platform,
+            facebook_page_id: formData.platform !== 'instagram' ? formData.facebook_page_id : null,
+            instagram_account_id: formData.platform !== 'facebook' ? formData.instagram_account_id : null,
+          })
           .eq('id', prefill.editId);
         if (error) throw error;
+      } else if (formData.platform === 'both') {
+        // Crear dos posts separados — uno por plataforma (misma lógica que importación TXT)
+        const { error } = await supabase.from('posts').insert([
+          { ...basePostData, platform: 'facebook', facebook_page_id: formData.facebook_page_id, instagram_account_id: null },
+          { ...basePostData, platform: 'instagram', facebook_page_id: null, instagram_account_id: formData.instagram_account_id },
+        ]);
+        if (error) throw error;
       } else {
-        const { error } = await supabase
-          .from('posts')
-          .insert([postData]);
+        const { error } = await supabase.from('posts').insert([{
+          ...basePostData,
+          platform: formData.platform,
+          facebook_page_id: formData.platform !== 'instagram' ? formData.facebook_page_id : null,
+          instagram_account_id: formData.platform !== 'facebook' ? formData.instagram_account_id : null,
+        }]);
         if (error) throw error;
       }
 

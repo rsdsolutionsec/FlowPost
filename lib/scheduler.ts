@@ -94,42 +94,20 @@ export async function processScheduledPosts() {
       const isVideo = /\.(mp4|mov|avi|wmv|flv|webm|mkv)$/i.test(mediaPath);
       const mediaType = isVideo ? 'video' : 'image';
 
-      const isInstagram = post.platform === 'instagram';
-      let result;
+      const existingMeta = (post.metadata as any) || {};
+      const doFacebook = (post.platform === 'facebook' || post.platform === 'both') && !existingMeta.fb_post_id;
+      const doInstagram = (post.platform === 'instagram' || post.platform === 'both') && !existingMeta.ig_post_id;
 
-      if (isInstagram) {
-        const igData = post.instagram_accounts;
-        if (!igData || !(igData as any).instagram_business_id) {
-          throw new Error('No se encontró el ID de Instagram Business para este post');
-        }
-        
-        const igToken = (igData as any).facebook_pages?.page_access_token;
-        if (!igToken) {
-          throw new Error('No se encontró el token de la página de Facebook vinculada a Instagram');
-        }
+      let fbResult: any = null;
+      let igResult: any = null;
 
-        console.log(`[Scheduler] Enviando ${mediaType} a Instagram (${(igData as any).instagram_business_id})...`);
-        
-        // Instagram requiere URL pública. Si mediaPath es relativa, tenemos un problema.
-        if (!mediaPath.startsWith('http')) {
-           throw new Error('Instagram requiere una URL pública para el medio (R2). Las rutas relativas de Storage no son compatibles.');
-        }
-
-        result = await publishToInstagram(
-          mediaPath,
-          resolvedCaption,
-          (igData as any).instagram_business_id,
-          igToken,
-          mediaType
-        );
-      } else {
+      // — Facebook —
+      if (doFacebook) {
         const pageData = post.facebook_pages;
         if (!pageData || !(pageData as any).page_id || !(pageData as any).page_access_token) {
           throw new Error('No se encontraron credenciales de Facebook para este post (facebook_pages missing)');
         }
 
-        console.log(`[Scheduler] Enviando ${mediaType} a Facebook (Page: ${(pageData as any).page_id})...`);
-        
         console.log(`[Scheduler] Descargando ${mediaType}: ${mediaPath}`);
         let mediaData: Blob;
         if (mediaPath.startsWith('http')) {
@@ -146,53 +124,112 @@ export async function processScheduledPosts() {
           mediaData = data;
         }
 
-        result = await publishToFacebook(
-          mediaData, 
+        console.log(`[Scheduler] Enviando ${mediaType} a Facebook (Page: ${(pageData as any).page_id})...`);
+        fbResult = await publishToFacebook(
+          mediaData,
           resolvedCaption,
           (pageData as any).page_id,
           (pageData as any).page_access_token,
           mediaType
         );
+
+        if (!fbResult.success) {
+          console.error(`[Scheduler] Post ${post.id} falló en Facebook: ${fbResult.error}`);
+        }
       }
 
-      if (result.success) {
-        const platformKey = isInstagram ? 'ig_post_id' : 'fb_post_id';
-        const platformTime = isInstagram ? 'ig_published_at' : 'fb_published_at';
+      // — Instagram —
+      if (doInstagram) {
+        const igData = post.instagram_accounts;
+        const igBusinessId = (igData as any)?.instagram_business_id;
+        const igToken = (igData as any)?.facebook_pages?.page_access_token;
+
+        if (!igData || !igBusinessId) {
+          const msg = 'No se encontró el ID de Instagram Business para este post';
+          if (post.platform === 'instagram') throw new Error(msg);
+          console.error(`[Scheduler] ${msg} — skipping IG for platform=both`);
+        } else if (!igToken) {
+          const msg = 'No se encontró el token de la página de Facebook vinculada a Instagram';
+          if (post.platform === 'instagram') throw new Error(msg);
+          console.error(`[Scheduler] ${msg} — skipping IG for platform=both`);
+        } else if (!mediaPath.startsWith('http')) {
+          const msg = 'Instagram requiere una URL pública para el medio (R2)';
+          if (post.platform === 'instagram') throw new Error(msg);
+          console.error(`[Scheduler] ${msg} — skipping IG for platform=both`);
+        } else {
+          console.log(`[Scheduler] Enviando ${mediaType} a Instagram (${igBusinessId})...`);
+          igResult = await publishToInstagram(
+            mediaPath,
+            resolvedCaption,
+            igBusinessId,
+            igToken,
+            mediaType
+          );
+
+          if (!igResult.success) {
+            console.error(`[Scheduler] Post ${post.id} falló en Instagram: ${igResult.error}`);
+          }
+        }
+      }
+
+      // — Result handling —
+      const anySuccess = (doFacebook && fbResult?.success) || (doInstagram && igResult?.success);
+
+      if (anySuccess) {
+        const metadataUpdate: Record<string, any> = {
+          ...((post.metadata as any) || {}),
+          platform: post.platform,
+          media_type: mediaType,
+        };
+
+        if (fbResult?.success) {
+          metadataUpdate.fb_post_id = fbResult.post_id || fbResult.id;
+          metadataUpdate.fb_published_at = new Date().toISOString();
+          delete metadataUpdate.fb_error;
+        }
+        if (igResult?.success) {
+          metadataUpdate.ig_post_id = igResult.id;
+          metadataUpdate.ig_published_at = new Date().toISOString();
+          delete metadataUpdate.ig_error;
+        }
+        if (!fbResult?.success && doFacebook) {
+          metadataUpdate.fb_error = fbResult?.error || 'unknown';
+        }
+        if (!igResult?.success && doInstagram) {
+          metadataUpdate.ig_error = igResult?.error || 'skipped';
+        }
 
         const { error: updateError } = await supabaseAdmin
           .from('posts')
-          .update({
-            status: 'published',
-            metadata: {
-              [platformKey]: isInstagram ? result.id : (result.post_id || result.id),
-              [platformTime]: new Date().toISOString(),
-              platform: post.platform,
-              media_type: mediaType
-            }
-          })
+          .update({ status: 'published', metadata: metadataUpdate })
           .eq('id', post.id);
 
         if (updateError) {
           console.error(`[Scheduler] Error al actualizar estado del post ${post.id}:`, updateError);
         }
-        
+
         succeeded++;
         console.log(`[Scheduler] Post ${post.id} (${mediaType}) publicado con éxito.`);
       } else {
+        const errors: string[] = [];
+        if (doFacebook && fbResult) errors.push(`FB: ${fbResult.error}`);
+        if (doInstagram && igResult) errors.push(`IG: ${igResult.error}`);
+
         await supabaseAdmin
           .from('posts')
-          .update({ 
+          .update({
             status: 'failed',
-            metadata: { 
-              error: result.error, 
+            metadata: {
+              ...existingMeta,
+              error: errors.join(' | ') || 'unknown',
               failed_at: new Date().toISOString(),
               media_type: mediaType
             }
           })
           .eq('id', post.id);
-        
+
         failed++;
-        console.error(`[Scheduler] Post ${post.id} falló en Facebook: ${result.error}`);
+        console.error(`[Scheduler] Post ${post.id} falló: ${errors.join(' | ')}`);
       }
     } catch (e: any) {
       failed++;
@@ -200,9 +237,9 @@ export async function processScheduledPosts() {
       
       await supabaseAdmin
         .from('posts')
-        .update({ 
+        .update({
           status: 'failed',
-          metadata: { error: e.message, failed_at: new Date().toISOString() }
+          metadata: { ...((post.metadata as any) || {}), error: e.message, failed_at: new Date().toISOString() }
         })
         .eq('id', post.id);
     }

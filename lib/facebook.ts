@@ -55,13 +55,12 @@ export async function publishToFacebook(
     
     formData.append('source', blob, filename);
     formData.append(captionParam, caption);
+    formData.append('no_story', 'false');
 
-    const response = await fetch(url, {
+    const urlWithToken = `${url}?access_token=${encodeURIComponent(accessToken)}`;
+    const response = await fetch(urlWithToken, {
       method: 'POST',
-      body: formData,
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      }
+      body: formData
     });
 
     const data = await response.json();
